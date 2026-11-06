@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="format-detection" content="telephone=no">
+  <title>Bailleul Super Bon Plan</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="vue" aria-live="polite"></main>
+
+  <nav id="onglets" aria-label="Navigation principale">
+    <button data-onglet="catalogue" aria-label="Catalogue">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.2 12 3l8.5 7.2V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"/></svg>
+      <span>Catalogue</span>
+    </button>
+    <button data-onglet="louer" aria-label="Louer du matériel" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.6-.6-2.1z"/></svg>
+      <span>Louer</span>
+    </button>
+    <button data-onglet="reservations" aria-label="Mes réservations">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V5a2 2 0 0 1 2-2h7a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.8z"/><circle cx="8" cy="8" r="1.6"/></svg>
+      <span>Mes résas</span>
+    </button>
+    <button data-onglet="messages" aria-label="Messages">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>
+      <span>Messages</span>
+    </button>
+    <button data-onglet="equipe" aria-label="Espace équipe" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M4 12h16"/></svg>
+      <span>Équipe</span>
+    </button>
+    <button data-onglet="compte" aria-label="Mon compte">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+      <span>Compte</span>
+    </button>
+  </nav>
+
+  <div id="toast" role="status" hidden></div>
+  <div id="modale" hidden></div>
+  <input type="file" id="fichier-photo" accept="image/*" hidden>
+
+  <script src="config.js"></script>
+  <script src="vendor/qrcode.js"></script>
+  <script src="demo.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
