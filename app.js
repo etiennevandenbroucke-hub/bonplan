@@ -4,7 +4,7 @@
 
   var API_URL = (window.BSBP_CONFIG && window.BSBP_CONFIG.API_URL || '').trim();
   var MODE_DEMO = !API_URL;
-  var VERSION_APP = '5.0.0';
+  var VERSION_APP = '6.2.0';
   var Cap = window.Capacitor;
   var Plugins = (Cap && Cap.Plugins) || {};
   var NATIF = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
@@ -34,7 +34,7 @@
 
   // ================= API =================
   // Lectures : on peut réessayer sans risque. Écritures : seulement si le moteur était occupé (rien n'a été enregistré).
-  var LECTURES = ['demarrage', 'config', 'articles', 'article', 'materiel', 'outil', 'mesLocations', 'equipeLocations', 'equipeMateriel', 'photo', 'moi', 'mesReservations', 'mesAlertes', 'mesDons', 'monBilan',
+  var LECTURES = ['equipeTableau', 'equipePoints', 'demarrage', 'config', 'articles', 'article', 'materiel', 'outil', 'mesLocations', 'equipeLocations', 'equipeMateriel', 'photo', 'moi', 'mesReservations', 'mesAlertes', 'mesDons', 'monBilan',
     'mesConversations', 'lireConversation', 'equipeReservations', 'equipeArticles', 'equipeDons', 'equipeAnimations', 'equipeConversations',
     'equipeLireConversation', 'equipeReglages'];
   function attendre(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -207,6 +207,11 @@
   }
   function retour() { if (etat.pile.length > 1) { etat.pile.pop(); afficher(); } }
   function ouvrirOnglet(nom) { etat.onglet = nom; etat.pile = [{ nom: nom, params: {} }]; afficher(); }
+  /** Compte équipe : l'app n'affiche que l'espace équipe (sauf si le salarié choisit « Voir l'app comme un client »). */
+  function modeEquipe() { return !!(etat.utilisateur && etat.utilisateur.role && !etat.modeClient); }
+  function accueil() { return modeEquipe() ? 'eq-accueil' : 'catalogue'; }
+  var ONGLETS_EQUIPE = { 'eq-accueil': 'accueil', 'eq-retraits': 'retraits', 'eq-locations': 'locations', 'eq-messages': 'messages', 'eq-stock': 'stock', 'eq-plus': 'plus' };
+  Object.keys(ONGLETS_EQUIPE).forEach(function (k) { vues[k] = function () { etat.equipeVue = ONGLETS_EQUIPE[k]; vues.equipe(); }; });
   function afficher() {
     arreterParticules();
     if (etat.poll) { clearInterval(etat.poll); etat.poll = null; }
@@ -216,12 +221,18 @@
     document.querySelectorAll('#onglets button').forEach(function (b) {
       if (b.dataset.onglet === etat.onglet) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
-    document.querySelector('[data-onglet="equipe"]').hidden = !(etat.utilisateur && etat.utilisateur.role);
-    var bl = document.querySelector('[data-onglet="louer"]'); if (bl) bl.hidden = !(cfg().location && cfg().location.active);
+    var eq = modeEquipe(), loc = !!(cfg().location && cfg().location.active);
+    document.querySelectorAll('#onglets button').forEach(function (b) {
+      var o = b.dataset.onglet, estEq = o.indexOf('eq-') === 0;
+      b.hidden = eq ? !estEq || (o === 'eq-locations' && !loc) : estEq || o === 'equipe' || (o === 'louer' && !loc);
+    });
+    var rv = document.getElementById('retour-equipe');
+    if (rv) rv.hidden = !(etat.utilisateur && etat.utilisateur.role && etat.modeClient);
     majPastille();
     window.scrollTo(0, 0);
     vues[courant.nom](courant.params);
   }
+  document.getElementById('retour-equipe').addEventListener('click', function () { etat.modeClient = false; ouvrirOnglet('eq-accueil'); });
   document.getElementById('onglets').addEventListener('click', function (e) {
     var b = e.target.closest('button'); if (b) ouvrirOnglet(b.dataset.onglet);
   });
@@ -229,6 +240,8 @@
   function majPastille() {
     var bm = document.querySelector('[data-onglet="messages"]');
     if (bm) bm.classList.toggle('pastille', etat.nonLus > 0);
+    var be = document.querySelector('[data-onglet="eq-messages"]');
+    if (be) be.classList.toggle('pastille', (etat.nonLusEquipe || 0) > 0);
     var b = document.querySelector('[data-onglet="reservations"]');
     var n = etat.mesAttentes.filter(function (w) { return w.statut === 'proposé'; }).length;
     b.classList.toggle('pastille', n > 0);
@@ -307,11 +320,13 @@
   function htmlBandeaux(bandeaux) {
     if (!bandeaux || !bandeaux.length) return '';
     return '<section class="bandeaux" aria-label="À la une en ce moment"><div class="defile">' + bandeaux.map(function (b, i) {
-      return '<div class="bandeau" data-theme-b="' + esc(b.theme) + '">' +
-        '<canvas aria-hidden="true" data-particules="' + esc((THEMES[b.theme] || {}).particules || '') + '"></canvas>' +
+      var fond = b.image ? (/^data:/.test(b.image) ? b.image : urlPhoto(b.image, 1200)) : '';
+      return '<div class="bandeau' + (fond ? ' avec-image' : '') + '" data-theme-b="' + esc(b.theme) + '">' +
+        (fond ? '<img class="bandeau-fond" src="' + esc(fond) + '" alt="">' : '<canvas aria-hidden="true" data-particules="' + esc((THEMES[b.theme] || {}).particules || '') + '"></canvas>') +
+        (b.remise ? '<span class="bandeau-remise">−' + esc(b.remise) + ' %</span>' : '') +
         '<div class="bandeau-texte"><h2>' + esc(b.titre) + '</h2>' + (b.texte ? '<p>' + esc(b.texte) + '</p>' : '') +
         (b.bouton && b.lien ? '<button class="bouton-bandeau" data-bandeau="' + i + '">' + esc(b.bouton) + '</button>' : '') + '</div>' +
-        (b.image ? '<div class="bandeau-image">' + imgPhoto(b.image, '', 300) + '</div>' : '') + '</div>';
+        '</div>';
     }).join('') + '</div>' +
       (bandeaux.length > 1 ? '<div class="points">' + bandeaux.map(function (_, i) { return '<i' + (i ? '' : ' class="actif"') + '></i>'; }).join('') + '</div>' : '') + '</section>';
   }
@@ -338,10 +353,26 @@
 
   // ================= Favoris (gardés sur le téléphone) =================
   function estFavori(id) { return etat.favoris.indexOf(id) >= 0; }
+  var minuteurFavoris = null;
+  function synchroniserFavoris() {
+    if (!etat.jeton) return;
+    clearTimeout(minuteurFavoris);
+    minuteurFavoris = setTimeout(function () { api('syncFavoris', { ids: etat.favoris.slice(0, 200) }).catch(function () {}); }, 1500);
+  }
+  /** À la connexion : on réunit les favoris du téléphone et ceux du compte. */
+  function fusionnerFavoris(duCompte) {
+    if (!duCompte) return;
+    var avant = etat.favoris.length, union = etat.favoris.slice();
+    duCompte.forEach(function (id) { if (union.indexOf(id) < 0) union.push(id); });
+    etat.favoris = union.slice(0, 200);
+    stockage.set('favoris', JSON.stringify(etat.favoris));
+    if (union.length !== duCompte.length || avant !== union.length) synchroniserFavoris();
+  }
   function basculerFavori(id) {
     if (estFavori(id)) etat.favoris = etat.favoris.filter(function (x) { return x !== id; });
     else { etat.favoris.unshift(id); toast('Ajouté à vos favoris.'); }
     stockage.set('favoris', JSON.stringify(etat.favoris.slice(0, 200)));
+    synchroniserFavoris();
     document.querySelectorAll('[data-fav="' + id + '"]').forEach(function (b) { b.setAttribute('aria-pressed', String(estFavori(id))); });
   }
   document.addEventListener('click', function (e) {
@@ -408,6 +439,17 @@
   }
 
   // ================= Catalogue =================
+  var recherchesNotees = {}, minuteurRecherche = null;
+  function noterRecherche(q, nb, ou) {
+    clearTimeout(minuteurRecherche);
+    var t = sansAccents(q || '').trim();
+    if (t.length < 3 || MODE_DEMO) return;
+    minuteurRecherche = setTimeout(function () {
+      if (recherchesNotees[ou + t]) return;
+      recherchesNotees[ou + t] = 1;
+      api('logRecherche', { texte: t, nb: nb, ou: ou }).catch(function () {});
+    }, 2500);
+  }
   // ----- Recherche par familles de mots (mêmes règles que les alertes côté moteur) -----
   var MOTS_VIDES = ['de', 'du', 'des', 'la', 'le', 'les', 'un', 'une', 'pour', 'en', 'a', 'et', 'au', 'aux', 'avec', 'sans', 'd', 'l'];
   function racine(m) { return m.length > 4 ? m.replace(/(s|x)$/, '') : m; }
@@ -420,13 +462,18 @@
     return out;
   }
 
+  function htmlPrix(p0, initial, suffixe, grand) {
+    var solde = initial && initial > p0;
+    return '<span class="prix' + (grand ? ' grand' : '') + (solde ? ' solde' : '') + '">' + (solde ? '<s>' + prix(initial) + '</s> ' : '') + prix(p0) + (suffixe ? '<small>' + suffixe + '</small>' : '') + '</span>' +
+      (solde ? '<span class="badge-remise' + (grand ? ' grand' : '') + '">−' + Math.round((1 - p0 / initial) * 100) + ' %</span>' : '');
+  }
   function carte(a) {
     return '<div class="carte' + (a.disponible ? '' : ' indispo') + '" data-id="' + esc(a.id) + '" role="link" tabindex="0" aria-label="' + esc(a.titre + ', ' + prix(a.prix)) + '">' +
       '<div class="photo">' + imgPhoto(a.photos[0], '', 600) +
       (a.etiquette ? '<span class="etiq">' + esc(a.etiquette) + '</span>' : '') +
       (a.disponible ? '' : '<span class="voile">Réservé</span>') +
       '<button class="fav" data-fav="' + esc(a.id) + '" aria-pressed="' + estFavori(a.id) + '" aria-label="Favori">' + ICONES.coeur + '</button>' +
-      '<span class="prix">' + prix(a.prix) + '</span></div><h3>' + esc(a.titre) + '</h3><p>' + esc([a.taille, a.etat].filter(Boolean).join(', ') || a.categorie || '') + '</p></div>';
+      htmlPrix(a.prix, a.prixInitial) + '</div><h3>' + esc(a.titre) + '</h3><p>' + esc([a.taille, a.etat].filter(Boolean).join(', ') || a.categorie || '') + '</p></div>';
   }
   function brancherCartes(zone) {
     zone.addEventListener('click', function (e) { var c = e.target.closest('.carte'); if (c && !e.target.closest('[data-fav]')) aller('article', { id: c.dataset.id }); });
@@ -458,6 +505,7 @@
       '<div id="filtres-plus"></div>' +
       '<div id="vitrines"></div><div id="liste"></div>';
     activerBandeaux($vue, anim.bandeaux);
+    setTimeout(popupAnimation, 800);
     document.getElementById('vers-favoris').onclick = function () { aller('favoris'); };
     document.getElementById('vers-alertes').onclick = function () { if (exigerConnexion('Connectez-vous pour être prévenu des nouveautés.', function () { aller('alertes', {}, true); })) aller('alertes'); };
     $vue.querySelector('.recherche input').addEventListener('input', function (e) { etat.recherche = e.target.value; dessinerListe(); });
@@ -531,6 +579,7 @@
   function chargerArticles() {
     return api('articles', { version: etat.versionCatalogue || '' }).then(function (r) {
       if (r.inchange && etat.articles) return etat.articles;
+      if (r.inchange) { etat.versionCatalogue = ''; return chargerArticles(); } // rien en mémoire : on redemande tout
       // On garde les fiches complètes déjà chargées pour les articles inchangés.
       var complets = {};
       (etat.articles || []).forEach(function (a) { if (!a.leger) complets[a.id] = a; });
@@ -574,6 +623,7 @@
       return a._exact || mots.every(function (m) { return variantes(m).some(function (v) { return t.indexOf(racine(v)) >= 0; }); });
     }).sort(function (x, y) { return ((y._exact ? 2 : 0) + (y.disponible ? 1 : 0)) - ((x._exact ? 2 : 0) + (x.disponible ? 1 : 0)); });
     var nbExacts = qn ? liste.filter(function (a) { return a._exact; }).length : liste.length;
+    noterRecherche(q, liste.length, 'catalogue');
     var lienAlerte = q ? '<button class="lien" id="alerte-recherche">' + ICONES.cloche + ' Me prévenir des nouveautés « ' + esc(q) + ' »</button>' : '';
     if (!liste.length) {
       zone.innerHTML = '<div class="vide"><strong>' + (filtreActif ? 'Aucun article ne correspond' : 'Aucun article pour le moment') + '</strong>' +
@@ -590,8 +640,9 @@
       };
       zone.innerHTML = (filtreActif ? '' : '<h2 class="section">Tous les articles</h2>') + '<div class="grille" id="grille">' + rendreCartes(0, affiches) + '</div>' +
         (liste.length > affiches ? '<div id="suite" class="suite">Chargement des articles suivants…</div>' : '') + lienAlerte +
-        (filtreActif ? '' : '<button class="carte-invite" id="carte-invite">' + ICONES.partage + '<span><b>Vous aimez l\'appli ?</b>Envoyez-la à un proche par SMS, WhatsApp, mail ou Facebook.</span></button>');
+        (filtreActif ? '' : bandeauInstallation()) + (filtreActif ? '' : '<button class="carte-invite" id="carte-invite">' + ICONES.partage + '<span><b>Vous aimez l\'appli ?</b>Envoyez-la à un proche par SMS, WhatsApp, mail ou Facebook.</span></button>');
       var ci = document.getElementById('carte-invite'); if (ci) ci.onclick = function () { aller('inviter'); };
+      brancherInstallation();
       // Affichage progressif : 40 articles, puis 40 de plus quand on approche du bas de la liste.
       var suite = document.getElementById('suite');
       if (suite && window.IntersectionObserver) {
@@ -633,7 +684,7 @@
       '<div class="galerie"><div class="defile">' + photos.map(function (ref, i) { return '<div>' + imgPhoto(ref, a.titre + ' – photo ' + (i + 1), 1200) + '</div>'; }).join('') + '</div>' +
         (photos.length > 1 ? '<div class="points">' + photos.map(function (_, i) { return '<i' + (i ? '' : ' class="actif"') + '></i>'; }).join('') + '</div>' : '') +
         (a.etiquette ? '<span class="etiq grand">' + esc(a.etiquette) + '</span>' : '') +
-        '<span class="prix grand">' + prix(a.prix) + '</span></div>' +
+        htmlPrix(a.prix, a.prixInitial, '', true) + '</div>' +
       '<article class="fiche"><h2>' + esc(a.titre) + '</h2>' +
         '<div class="details">' + [a.sousCategorie ? a.categorie + ' › ' + a.sousCategorie : a.categorie, a.taille, a.etat].filter(Boolean).map(function (d) { return '<span>' + esc(d) + '</span>'; }).join('') + '</div>' +
         '<div class="rangee-boutons"><button class="bouton second petit" data-fav="' + esc(a.id) + '" aria-pressed="' + estFavori(a.id) + '">' + ICONES.coeur + 'Favori</button>' +
@@ -703,32 +754,51 @@
   }
 
   // ================= Réservation : choix du créneau =================
-  function joursDisponibles(limiteMs) {
+  function joursDisponibles(limiteMs, joursPoint) {
     var c = cfg(), jours = [], d = new Date(); d.setHours(12, 0, 0, 0);
-    var ouverts = (c.joursOuverture || []).length ? c.joursOuverture : JOURS;
+    d.setDate(d.getDate() + (c.delaiPreparationJours == null ? 1 : c.delaiPreparationJours)); // pas de retrait le jour même
+    var ouverts = (joursPoint && joursPoint.length) ? joursPoint : (c.joursOuverture || []).length ? c.joursOuverture : JOURS;
     while (d.getTime() <= limiteMs && jours.length < 10) {
       if (ouverts.indexOf(JOURS[d.getDay()]) >= 0) jours.push(new Date(d));
       d.setDate(d.getDate() + 1);
     }
     return jours;
   }
+  function pointsPour(a) {
+    var c = cfg(), pts = c.points || [];
+    var vol = a.volumineux || (c.categoriesVolumineuses || []).indexOf(a.categorie) >= 0;
+    var l = pts.filter(function (x) { return vol ? x.volumineux : x.vente; });
+    return l.length ? l : pts;
+  }
+  function pointLocation() { var pts = cfg().points || []; return pts.filter(function (x) { return x.location; })[0] || pts[0] || cfg().point || {}; }
   vues.reserver = function (p) {
     var a = trouverArticle(p.id); if (!a) { retour(); return; }
     var c = cfg();
     var limite = new Date(); limite.setDate(limite.getDate() + (c.delaiJours || 7)); limite.setHours(23, 59, 0, 0);
-    var jours = joursDisponibles(limite.getTime());
-    var choix = { date: '', moment: '' };
-    $vue.innerHTML = boutonRetour() + '<h1 class="titre-page">Quand passerez-vous ?</h1>' +
-      '<p class="sous-titre">« ' + esc(a.titre) + ' », ' + prix(a.prix) + ' à régler sur place. Vous avez jusqu\'au ' + esc(dateLongue(limite)) + ' pour le retirer.</p>' +
+    var permis = pointsPour(a);
+    var choix = { date: '', moment: '', point: (p.point) || (permis.length === 1 ? permis[0].nom : (etat.dernierPoint && permis.some(function (x) { return x.nom === etat.dernierPoint; }) ? etat.dernierPoint : '')) };
+    var ptChoisi = function () { return permis.filter(function (x) { return x.nom === choix.point; })[0]; };
+    var jours = joursDisponibles(limite.getTime(), ptChoisi() && ptChoisi().jours);
+    $vue.innerHTML = boutonRetour() + '<h1 class="titre-page">Où et quand ?</h1>' +
+      '<p class="sous-titre">« ' + esc(a.titre) + ' », ' + prix(a.prix) + ' à régler sur place. Retrait possible à partir de demain, jusqu\'au ' + esc(dateLongue(limite)) + '.</p>' +
+      '<h2 class="section">Point de retrait</h2>' +
+      (permis.length < (c.points || []).length ? '<p class="meta">Article volumineux : retrait uniquement dans ' + (permis.length > 1 ? 'ces lieux' : 'ce lieu') + '.</p>' : '') +
+      '<div class="points-retrait" id="points">' + permis.map(function (x) {
+        return '<button class="point-retrait" data-point="' + esc(x.nom) + '" aria-pressed="' + (x.nom === choix.point) + '"><b>' + esc(x.nom) + '</b><span>' + esc(x.adresse) + '</span>' + (x.horaires ? '<span>' + esc(x.horaires) + '</span>' : '') + '</button>';
+      }).join('') + '</div>' +
       '<h2 class="section">Jour</h2><div class="choix" id="jours">' + jours.map(function (d) {
         var j = joursRestants(d.getTime());
         return '<button class="puce" data-date="' + iso(d) + '" aria-pressed="false">' + (j === 0 ? 'Aujourd\'hui' : j === 1 ? 'Demain' : esc(dateLongue(d.getTime()))) + '</button>';
       }).join('') + '<button class="puce" data-date="" aria-pressed="true">Je ne sais pas encore</button></div>' +
       ((c.creneaux || []).length ? '<h2 class="section">Moment</h2><div class="choix" id="moments">' + c.creneaux.map(function (m) {
         return '<button class="puce" data-moment="' + esc(m) + '" aria-pressed="false" disabled>' + esc(m) + '</button>'; }).join('') + '</div>' : '') +
-      '<section class="encadre" style="margin-top:20px"><h3>' + esc(c.point && c.point.nom) + '</h3><p>' + esc(c.point && c.point.adresse) + '</p><p>' + esc(c.point && c.point.horaires) + '</p></section>' +
-      '<div class="barre-action"><button class="bouton" id="confirmer">Confirmer la réservation</button></div>';
+      '<div class="barre-action"><button class="bouton" id="confirmer"' + (choix.point ? '' : ' disabled') + '>' + (choix.point ? 'Confirmer la réservation' : 'Choisissez un point de retrait') + '</button></div>';
     var zj = document.getElementById('jours'), zm = document.getElementById('moments');
+    document.getElementById('points').onclick = function (e) {
+      var b = e.target.closest('[data-point]'); if (!b) return;
+      etat.dernierPoint = b.dataset.point;
+      p.point = b.dataset.point; vues.reserver(p); // redessine les jours d'ouverture de ce point
+    };
     zj.onclick = function (e) {
       var b = e.target.closest('.puce'); if (!b) return;
       choix.date = b.dataset.date;
@@ -743,7 +813,8 @@
     };
     document.getElementById('confirmer').onclick = function () {
       var btn = this; chargement(btn, true, 'Réservation en cours…');
-      api('reserver', { idArticle: a.id, creneau: choix.date ? choix : null }).then(function (resa) {
+      if (!choix.point) { toast('Choisissez un point de retrait.', true); chargement(btn, false); return; }
+      api('reserver', { idArticle: a.id, creneau: choix.date ? { date: choix.date, moment: choix.moment } : null, point: choix.point }).then(function (resa) {
         a.disponible = false; a.statut = 'réservé';
         etat.mesAttentes = etat.mesAttentes.filter(function (w) { return !w.article || w.article.id !== a.id; });
         programmerRappel(resa);
@@ -762,7 +833,7 @@
       '<p>Un mail de confirmation vient de vous être envoyé.</p>' +
       '<section class="encadre"><h3>' + (r.creneau ? 'Passage prévu : ' + esc(r.creneau) : 'À retirer avant le ' + esc(dateLongue(r.limite))) + '</h3>' +
         (r.creneau ? '<p>Au plus tard le ' + esc(dateLongue(r.limite)) + '.</p>' : '') +
-        '<p>' + esc(c.point && c.point.nom) + ', ' + esc(c.point && c.point.adresse) + '</p><p>' + esc(c.point && c.point.horaires) + '</p>' +
+        (function () { var pt = (c.points || []).filter(function (x) { return x.nom === r.point; })[0] || c.point || {}; return '<p><b>' + esc(pt.nom) + '</b>, ' + esc(pt.adresse) + '</p>' + (pt.horaires ? '<p>' + esc(pt.horaires) + '</p>' : ''); })() +
         '<p>Montant à régler sur place : ' + prix(r.article.prix) + '</p></section>' +
       (r.article.co2 || r.article.poids ? '<p class="impact-ligne">' + ICONES.feuille + '<span>Merci : <b>' + (r.article.co2 ? co2(r.article.co2) : kg(r.article.poids)) + '</b> évités, à compter dans votre bilan une fois l\'article retiré.</span></p>' : '') +
       '<div class="pile"><button class="bouton" id="voir">Voir mes réservations</button><button class="bouton second" id="cont">Continuer mes achats</button>' +
@@ -803,7 +874,8 @@
         '<form class="pile" id="f"><label class="champ">Prénom<input name="prenom" autocomplete="given-name" required></label>' +
         '<label class="champ">Nom <small>(facultatif)</small><input name="nom" autocomplete="family-name"></label>' +
         '<label class="champ">Téléphone <small>(facultatif, pour vous joindre au sujet d\'un retrait)</small><input name="telephone" type="tel" autocomplete="tel"></label>' +
-        '<label class="case"><input type="checkbox" name="consentement" required><span>J\'accepte la <a href="#" id="lien-conf">politique de confidentialité</a>.</span></label>' +
+        champsProfil({}) +
+        '<label class="case"><input type="checkbox" name="consentement" required><span>J\'accepte les <a href="#" id="lien-cgu">conditions d\'utilisation</a> et la <a href="#" id="lien-conf">politique de confidentialité</a>.</span></label>' +
         '<button class="bouton">Recevoir mon code</button></form>';
     } else {
       html += '<h1 class="titre-page">Entrez le code</h1><p class="sous-titre">Envoyé à ' + esc(p.email) + '. Pensez à regarder dans les spams.</p>' +
@@ -812,6 +884,7 @@
     }
     $vue.innerHTML = html;
     var lc = document.getElementById('lien-conf'); if (lc) lc.onclick = function (e) { e.preventDefault(); ouvrirLien(cfg().urlConfidentialite); };
+    var lg = document.getElementById('lien-cgu'); if (lg) lg.onclick = function (e) { e.preventDefault(); ouvrirLien(cfg().urlConditions); };
     var f = document.getElementById('f');
     var premier = f.querySelector('input'); if (premier) setTimeout(function () { premier.focus(); }, 50);
     f.onsubmit = function (e) {
@@ -826,12 +899,14 @@
           toast('Bienvenue ' + (etat.utilisateur.prenom || '') + ' !');
           var suite = etat.apresConnexion; etat.apresConnexion = null;
           while (etat.pile.length && etat.pile[etat.pile.length - 1].nom === 'connexion') etat.pile.pop();
-          if (suite) suite(); else if (etat.utilisateur && etat.utilisateur.role) ouvrirOnglet('equipe'); else if (etat.pile.length) afficher(); else ouvrirOnglet('compte');
+          if (etat.utilisateur && etat.utilisateur.role) { etat.modeClient = false; ouvrirOnglet('eq-accueil'); }
+          else if (suite) suite(); else if (etat.pile.length) afficher(); else ouvrirOnglet('compte');
+          verifierProfil();
         }).catch(function (err) { chargement(btn, false); erreur(err); });
         return;
       }
       var email = etape === 'email' ? d.email : p.email;
-      var envoi = etape === 'email' ? { email: email } : { email: email, prenom: d.prenom, nom: d.nom, telephone: d.telephone, consentement: !!d.consentement };
+      var envoi = etape === 'email' ? { email: email } : { email: email, prenom: d.prenom, nom: d.nom, telephone: d.telephone, consentement: !!d.consentement, profil: { age: d.age, commune: d.commune, connu: d.connu } };
       api('demanderCode', envoi).then(function (r) {
         if (r.nouveauCompte) aller('connexion', { etape: 'inscription', email: email });
         else aller('connexion', { etape: 'code', email: email });
@@ -888,6 +963,8 @@
         if (q) { chargement(q, true); api('quitterAttente', { id: q.dataset.quitter }).then(function () { etat.articles = null; toast('C\'est fait.'); vues.reservations(); }).catch(function (err) { chargement(q, false); erreur(err); }); return; }
         var ec = e.target.closest('[data-ecrire]');
         if (ec && ec.dataset.ecrire) { aller('conversation', { idArticle: ec.dataset.ecrire }); return; }
+        var va = e.target.closest('[data-voir-article]');
+        if (va && va.dataset.voirArticle) { voirArticle(va.dataset.voirArticle); return; }
         var cr = e.target.closest('[data-creneau]');
         if (cr) { var resa = actives.filter(function (x) { return x.code === cr.dataset.creneau; })[0]; aller('creneau', { resa: resa }); return; }
         var b = e.target.closest('[data-annuler]'); if (!b) return;
@@ -928,8 +1005,9 @@
       etiquette = '<span class="etiquette fini">' + esc(libelles[r.statut] || r.statut) + '</span>';
     }
     var actif = r.statut === 'active';
-    return '<div class="resa' + (actif ? '' : ' passee') + '">' + vignette(r.article) +
-      '<div><h3>' + esc(r.article.titre) + '</h3><p class="meta">' + prix(r.article.prix) + (actif ? ', à payer au retrait' : '') + '</p>' +
+    return '<div class="resa' + (actif ? '' : ' passee') + '"><button class="vers-produit" data-voir-article="' + esc(r.article.id || '') + '" aria-label="Revoir l\'article">' + vignette(r.article) + '</button>' +
+      '<div><h3><button class="lien-titre" data-voir-article="' + esc(r.article.id || '') + '">' + esc(r.article.titre) + '</button></h3><p class="meta">' + prix(r.prixPaye || r.article.prix) + (actif ? ', à payer au retrait' : '') + '</p>' +
+      (actif && r.point ? '<p class="meta">Retrait : ' + esc(r.point) + '</p>' : '') +
       (actif ? '<span class="code-retrait">' + esc(r.code) + '</span><br>' : '') + etiquette +
       (actif ? '<p class="meta creneau">' + (r.creneau ? 'Passage prévu : ' + esc(r.creneau) : 'Passage : pas encore indiqué') + ' <button class="lien" data-creneau="' + esc(r.code) + '">' + (r.creneau ? 'Modifier' : 'Indiquer') + '</button></p>' : '') + '</div>' +
       (actif ? '<div class="actions"><button class="bouton second petit" data-ecrire="' + esc(r.article.id || '') + '">' + ICONES.bulle + 'Écrire à l\'équipe</button><button class="bouton second petit" data-annuler="' + esc(r.code) + '">Annuler la réservation</button></div>' : '') + '</div>';
@@ -1002,9 +1080,10 @@
     var u = etat.utilisateur || {};
     $vue.innerHTML = boutonRetour() + '<h1 class="titre-page">Paramètres du compte</h1>' +
       '<section class="encadre"><h3>Mes informations</h3><p>' + esc(u.prenom || '') + (u.nom ? ' ' + esc(u.nom) : '') + '</p><p>' + esc(u.email || '') + '</p>' + (u.telephone ? '<p>' + esc(u.telephone) + '</p>' : '') + '</section>' +
+      (!NATIF && /iPhone|iPad|iPod/.test(navigator.userAgent) && !estInstallee() && (window.BSBP_CONFIG || {}).firebase ? '<section class="encadre"><h3>Notifications sur iPhone</h3><p>Ajoutez d\'abord l\'app à l\'écran d\'accueil (Partager › Sur l\'écran d\'accueil), ouvrez-la depuis son icône, puis revenez ici pour activer les notifications.</p></section>' : '') +
       (Push.disponible() ? '<section class="reglage"><div><b>Notifications sur ce téléphone</b><span>Nouveautés de vos alertes, article libéré pour vous, réponses de l\'équipe.</span></div>' +
         '<label class="interrupteur"><input type="checkbox" id="push"' + (etat.pushActif ? ' checked' : '') + '><span aria-hidden="true"></span><em class="sr">Notifications</em></label></section>' : '') +
-      '<nav class="menu" style="margin-top:16px"><button data-r="tailles">' + ICONES.etoile + '<span>Mes tailles</span>' + ICONES.chevron + '</button></nav>' +
+      '<nav class="menu" style="margin-top:16px"><button data-r="profil">' + ICONES.coeur + '<span>Mon profil</span>' + ICONES.chevron + '</button><button data-r="tailles">' + ICONES.etoile + '<span>Mes tailles</span>' + ICONES.chevron + '</button></nav>' +
       '<div class="pile" style="margin-top:24px"><button class="bouton second" id="deco">Se déconnecter</button></div>' +
       '<section class="zone-sensible"><h3>Supprimer mon compte</h3><p>Efface vos informations, alertes, messages et listes d\'attente, et annule vos réservations en cours.</p>' +
       '<button class="lien danger-lien" id="suppr">Supprimer mon compte…</button></section>';
@@ -1014,6 +1093,7 @@
       else Push.desactiver().then(function () { toast('Notifications désactivées.'); });
     };
     $vue.querySelector('[data-r="tailles"]').onclick = function () { aller('mesTailles'); };
+    $vue.querySelector('[data-r="profil"]').onclick = function () { aller('profil', {}); };
     document.getElementById('deco').onclick = function () {
       modale('Se déconnecter ?', 'Vous devrez recevoir un nouveau code par mail pour vous reconnecter sur ce téléphone.', [
         { texte: 'Se déconnecter', valeur: true }, { texte: 'Rester connecté', valeur: false, style: 'second' }
@@ -1120,15 +1200,46 @@
   }
 
   // ================= Notifications sur le téléphone (Firebase Cloud Messaging) =================
+  /** Notifications de la version web (Android, et iPhone quand l'app est ajoutée à l'écran d'accueil). Même interface que le plugin natif. */
+  var WebFM = (function () {
+    var conf = (window.BSBP_CONFIG || {}).firebase;
+    var ok = !NATIF && !!(conf && conf.vapidKey && conf.apiKey) && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    var VERSION_FB = '12.4.0', messaging = null, chargement = null;
+    function script(src) { return new Promise(function (res, rej) { var s0 = document.createElement('script'); s0.src = src; s0.onload = res; s0.onerror = rej; document.head.appendChild(s0); }); }
+    function charger() {
+      if (!chargement) chargement = script('https://www.gstatic.com/firebasejs/' + VERSION_FB + '/firebase-app-compat.js')
+        .then(function () { return script('https://www.gstatic.com/firebasejs/' + VERSION_FB + '/firebase-messaging-compat.js'); })
+        .then(function () { if (!window.firebase.apps.length) window.firebase.initializeApp(conf); messaging = window.firebase.messaging(); return messaging; });
+      return chargement;
+    }
+    function etatPermission() { return { receive: Notification.permission === 'default' ? 'prompt' : Notification.permission }; }
+    return !ok ? null : {
+      checkPermissions: function () { return Promise.resolve(etatPermission()); },
+      requestPermissions: function () { return Notification.requestPermission().then(function () { return etatPermission(); }); },
+      getToken: function () {
+        return charger().then(function () { return navigator.serviceWorker.ready; })
+          .then(function (reg) { return messaging.getToken({ vapidKey: conf.vapidKey, serviceWorkerRegistration: reg }); })
+          .then(function (t) { return { token: t }; });
+      },
+      deleteToken: function () { return charger().then(function () { return messaging.deleteToken(); }); },
+      addListener: function (nom, cb) {
+        if (nom === 'notificationReceived') charger().then(function () {
+          messaging.onMessage(function (pl) { var n = pl.notification || {}; cb({ notification: { title: n.title, body: n.body, data: pl.data || {} } }); });
+        }).catch(function () {});
+        if (nom === 'notificationActionPerformed') navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.ouvrir) cb({ notification: { data: e.data.ouvrir } }); });
+      }
+    };
+  })();
+
   var Push = (function () {
-    function FM() { return Plugins.FirebaseMessaging; }
-    function disponible() { return !!(NATIF && FM() && cfg().notificationsPush) || MODE_DEMO; }
+    function FM() { return NATIF ? Plugins.FirebaseMessaging : WebFM; }
+    function disponible() { return !!(FM() && cfg().notificationsPush) || MODE_DEMO; }
     function enregistrer() {
       if (MODE_DEMO) { etat.pushActif = true; return Promise.resolve(true); }
       return FM().getToken().then(function (r) {
         if (!r || !r.token) return false;
         return stockage.set('pushToken', r.token).then(function () {
-          return api('enregistrerAppareil', { token: r.token, plateforme: Cap.getPlatform() });
+          return api('enregistrerAppareil', { token: r.token, plateforme: NATIF ? Cap.getPlatform() : 'web' });
         }).then(function () { etat.pushActif = true; return true; });
       }).catch(function () { return false; });
     }
@@ -1167,10 +1278,12 @@
       });
     }
     function ouvrir(data) {
+      if (!data) return;
       data = data || {};
+      if (typeof data === 'string') { try { data = JSON.parse(data); } catch (e) { data = {}; } }
       if (data.type === 'offre' || data.type === 'location') return ouvrirOnglet('reservations');
       if (data.type === 'message') { ouvrirOnglet('messages'); return aller('conversation', { id: data.id }); }
-      if (data.type === 'message-equipe') { etat.equipeVue = 'messages'; ouvrirOnglet('equipe'); return aller('conversation', { id: data.id, equipe: true }); }
+      if (data.type === 'message-equipe') { ouvrirOnglet('eq-messages'); return aller('conversation', { id: data.id, equipe: true }); }
       if (data.type === 'don') { ouvrirOnglet('compte'); return aller('mesDons'); }
       if (data.idArticle) {
         etat.articles = null;
@@ -1178,7 +1291,7 @@
       }
     }
     function brancher() {
-      if (!FM() || !NATIF) return;
+      if (!FM()) return;
       FM().addListener('notificationReceived', function (ev) {
         var n = ev.notification || {};
         banniere(n.title, n.body, n.data);
@@ -1188,6 +1301,7 @@
         if (c && c.nom === 'conversation' && n.data && n.data.id === c.params.id && etat.rafraichirConversation) etat.rafraichirConversation();
       });
       FM().addListener('notificationActionPerformed', function (ev) { ouvrir((ev.notification || {}).data); });
+      if (!NATIF) return;
       FM().addListener('tokenReceived', function (ev) {
         if (etat.jeton && etat.pushActif && ev.token) { stockage.set('pushToken', ev.token); api('enregistrerAppareil', { token: ev.token, plateforme: Cap.getPlatform() }).catch(function () {}); }
       });
@@ -1201,11 +1315,12 @@
       b.onclick = function () { b.className = ''; ouvrir(data); };
       clearTimeout(banniere._t); banniere._t = setTimeout(function () { b.className = ''; }, 6000);
     }
-    return { disponible: disponible, activer: activer, desactiver: desactiver, oublier: oublier, proposer: proposer, brancher: brancher, banniere: banniere };
+    return { ouvrir: ouvrir, disponible: disponible, activer: activer, desactiver: desactiver, oublier: oublier, proposer: proposer, brancher: brancher, banniere: banniere };
   })();
   window.BSBP_BANNIERE = function (t, c, d) { if (etat.pushActif || MODE_DEMO) { Push.banniere(t, c, d); rafraichirNonLus(); } };
 
   function deconnecterLocalement() {
+    etat.modeClient = false;
     etat.jeton = ''; etat.utilisateur = null; etat.alertes = []; etat.mesAttentes = []; etat.pushActif = false;
     stockage.set('jeton', null); majPastille();
     if (etat.onglet === 'equipe') ouvrirOnglet('catalogue');
@@ -1293,10 +1408,11 @@
   };
 
   // ================= Dons =================
-  vues.don = function () {
-    var c = cfg(), b = etat.brouillonDon, u = etat.utilisateur || {};
+  vues.don = function (p) {
+    var c = cfg(), u = etat.utilisateur || {}, ex = p && p.don;
+    var b = ex ? { photos: ex.photos.slice() } : etat.brouillonDon;
     var modes = (c.dons && c.dons.modes) || [];
-    $vue.innerHTML = boutonRetour() + '<h1 class="titre-page">Donner un objet</h1>' +
+    $vue.innerHTML = boutonRetour() + '<h1 class="titre-page">' + (ex ? 'Modifier ma proposition' : 'Donner un objet') + '</h1>' +
       '<p class="sous-titre">' + esc((c.dons && c.dons.texte) || '') + '</p>' +
       '<form class="pile" id="fd">' +
       '<div><p class="champ" style="margin:0 0 6px">Photos <small>(facultatif, 2 maximum)</small></p><div class="photos-saisie" id="ph"></div></div>' +
@@ -1305,7 +1421,9 @@
       (modes.length ? '<label class="champ">Remise<select name="mode" id="mode">' + modes.map(function (m) { return '<option>' + esc(m) + '</option>'; }).join('') + '</select></label>' : '') +
       '<label class="champ" id="champ-adresse" hidden>Adresse ou commune<input name="adresse" maxlength="200" autocomplete="street-address"></label>' +
       '<label class="champ">Téléphone <small>(pour convenir d\'un rendez-vous)</small><input name="telephone" type="tel" autocomplete="tel" value="' + esc(u.telephone || '') + '"></label>' +
-      '<button class="bouton">Proposer mon don</button></form>';
+      '<button class="bouton">' + (ex ? 'Enregistrer les modifications' : 'Proposer mon don') + '</button></form>';
+    var fd = document.getElementById('fd');
+    if (ex) { fd.description.value = ex.description; if (ex.categorie) fd.categorie.value = ex.categorie; if (fd.mode && ex.mode) fd.mode.value = ex.mode; fd.adresse.value = ex.adresse || ''; }
     var mode = document.getElementById('mode');
     function majAdresse() { document.getElementById('champ-adresse').hidden = !(mode && /domicile|collecte à/i.test(mode.value)); }
     if (mode) { mode.onchange = majAdresse; majAdresse(); }
@@ -1314,6 +1432,10 @@
     document.getElementById('fd').onsubmit = function (e) {
       e.preventDefault();
       var btn = e.target.querySelector('.bouton'); chargement(btn, true, b.photos.length ? 'Envoi des photos…' : 'Envoi…');
+      if (ex) {
+        return api('modifierDon', { id: ex.id, don: Object.fromEntries(new FormData(e.target)), photos: b.photos }).then(function () { toast('Proposition modifiée.'); retour(); })
+          .catch(function (err) { chargement(btn, false); erreur(err); });
+      }
       api('proposerDon', { don: Object.fromEntries(new FormData(e.target)), photos: b.photos }).then(function () {
         etat.brouillonDon = { photos: [] };
         modale('Merci pour votre don !', 'L\'équipe regarde votre proposition et vous répond par mail. Vous suivez la réponse dans Compte › Mes propositions de dons.', [{ texte: 'Parfait', valeur: true }])
@@ -1325,19 +1447,27 @@
     $vue.innerHTML = boutonRetour() + '<h1 class="titre-page">Mes propositions de dons</h1><div id="liste"><p class="sous-titre">Chargement…</p></div>';
     api('mesDons').then(function (l) {
       var z = document.getElementById('liste'); if (!z) return;
-      var lib = { 'nouveau': ['En attente de réponse', 'ok'], 'accepté': ['Accepté', 'ok'], 'refusé': ['Non retenu', 'fini'], 'reçu': ['Reçu, merci !', 'ok'] };
+      var lib = { 'nouveau': ['En attente de réponse', 'ok'], 'accepté': ['Accepté', 'ok'], 'refusé': ['Non retenu', 'fini'], 'reçu': ['Reçu, merci !', 'ok'], 'annulé': ['Retiré', 'fini'] };
       z.innerHTML = l.length ? l.map(function (d) {
         var s = lib[d.statut] || [d.statut, 'fini'];
         return '<div class="resa">' + vignette({ photos: d.photos, titre: d.description }) + '<div><h3>' + esc(d.description.slice(0, 80)) + '</h3><p class="meta">' + esc(dateLongue(d.date)) + ', ' + esc(d.mode) + '</p>' +
-          '<span class="etiquette ' + s[1] + '">' + esc(s[0]) + '</span>' + (d.reponse ? '<p class="reponse">« ' + esc(d.reponse) + ' »</p>' : '') + '</div></div>';
+          '<span class="etiquette ' + s[1] + '">' + esc(s[0]) + '</span>' + (d.reponse ? '<p class="reponse">« ' + esc(d.reponse) + ' »</p>' : '') + '</div>' +
+          '<div class="actions">' + (d.statut === 'nouveau' ? '<button class="bouton second petit" data-modif-don="' + esc(d.id) + '">Modifier</button>' : '') +
+          (d.statut === 'nouveau' || d.statut === 'accepté' ? '<button class="bouton second petit" data-retirer-don="' + esc(d.id) + '">Retirer ma proposition</button>' : '') + '</div></div>';
       }).join('') : '<div class="vide"><strong>Aucune proposition</strong>Vos dons donnent du travail à l\'équipe et une seconde vie aux objets.</div>';
+      z.onclick = function (e) {
+        var m = e.target.closest('[data-modif-don]'); if (m) { aller('don', { don: l.filter(function (d) { return d.id === m.dataset.modifDon; })[0] }); return; }
+        var r = e.target.closest('[data-retirer-don]'); if (!r) return;
+        modale('Retirer cette proposition ?', 'L\'équipe en sera informée.', [{ texte: 'Retirer', valeur: true, style: 'danger' }, { texte: 'Garder', valeur: false, style: 'second' }])
+          .then(function (ok) { if (ok) api('annulerDon', { id: r.dataset.retirerDon }).then(function () { toast('Proposition retirée.'); vues.mesDons(); }).catch(erreur); });
+      };
     }).catch(erreur);
   };
 
   // ================= Photos (équipe et dons) =================
   function brancherPhotos(ph, liste, max) {
     function dessiner() {
-      ph.innerHTML = liste.map(function (src, i) { return '<div><img src="' + src + '" alt="Photo ' + (i + 1) + '"><button type="button" class="suppr" data-i="' + i + '" aria-label="Retirer la photo">×</button></div>'; }).join('') +
+      ph.innerHTML = liste.map(function (src, i) { return '<div><img src="' + esc(/^data:/.test(src) ? src : urlPhoto(src, 300)) + '" alt="Photo ' + (i + 1) + '"><button type="button" class="suppr" data-i="' + i + '" aria-label="Retirer la photo">×</button></div>'; }).join('') +
         (liste.length < max ? '<div><button type="button" class="ajout">' + ICONES.photo + 'Ajouter</button></div>' : '');
     }
     ph.onclick = function (e) {
@@ -1378,9 +1508,18 @@
   }
 
   // ================= Espace équipe =================
+  var TITRES_EQUIPE = { accueil: 'Tableau de bord', retraits: 'Retraits à préparer', locations: 'Locations', messages: 'Messages des clients', stock: 'Stock', plus: 'Plus',
+    ajouter: 'Mettre un article en ligne', materiel: 'Matériel en location', dons: 'Propositions de dons', animer: 'Animations', reglages: 'Réglages' };
   vues.equipe = function () {
     if (!etat.utilisateur || !etat.utilisateur.role) { ouvrirOnglet('catalogue'); return; }
     var v = etat.equipeVue;
+    if (modeEquipe()) {
+      $vue.innerHTML = '<header class="tete-equipe"><p>Espace équipe</p><h1 class="titre-page">' + esc(TITRES_EQUIPE[v] || '') + '</h1></header><div id="eq"></div>';
+      if (['ajouter', 'materiel', 'dons', 'animer', 'reglages'].indexOf(v) >= 0) $vue.insertAdjacentHTML('afterbegin', '<button class="retour" data-v-retour>' + ICONES.retour + 'Plus</button>');
+      var rb = $vue.querySelector('[data-v-retour]'); if (rb) rb.onclick = function () { etat.equipeVue = 'plus'; vues.equipe(); };
+      ({ accueil: equipeTableau, plus: equipePlus, stock: equipeStockOnglets, locations: equipeLocationsUI, materiel: equipeMaterielUI, reglages: equipeReglages, retraits: equipeRetraits, messages: equipeMessages, ajouter: equipeAjouter, dons: equipeDons, animer: equipeAnimer })[v](document.getElementById('eq'));
+      return;
+    }
     $vue.innerHTML = '<h1 class="titre-page">Espace équipe</h1>' +
       '<div class="liens-equipe">' + (etat.utilisateur.urlSuivi ? '<button class="lien lien-suivi" id="suivi">' + ICONES.feuille + ' Tableau de suivi (Google Sheet)</button>' : '') +
       '<button class="lien lien-suivi" id="bug">' + ICONES.bulle + ' Signaler un bug ou une idée</button></div>' +
@@ -1392,7 +1531,7 @@
     $vue.querySelector('.puces').onclick = function (e) { var b = e.target.closest('button'); if (b) { etat.equipeVue = b.dataset.v; vues.equipe(); } };
     var su = document.getElementById('suivi'); if (su) su.onclick = function () { ouvrirLien(etat.utilisateur.urlSuivi); };
     document.getElementById('bug').onclick = function () { aller('retour'); };
-    ({ locations: equipeLocationsUI, materiel: equipeMaterielUI, reglages: equipeReglages, retraits: equipeRetraits, messages: equipeMessages, ajouter: equipeAjouter, stock: equipeStock, dons: equipeDons, animer: equipeAnimer })[v](document.getElementById('eq'));
+    ({ plus: equipePlus, locations: equipeLocationsUI, materiel: equipeMaterielUI, reglages: equipeReglages, retraits: equipeRetraits, messages: equipeMessages, ajouter: equipeAjouter, stock: equipeStock, dons: equipeDons, animer: equipeAnimer })[v](document.getElementById('eq'));
   };
 
   function equipeRetraits(zone) {
@@ -1408,6 +1547,7 @@
           '<h3>' + esc(r.article.titre) + '</h3><p class="meta">' + esc(r.prenom) + (r.telephone ? ', ' + esc(r.telephone) : '') + '</p>' +
           (r.emplacement ? '<p class="meta">Emplacement : ' + esc(r.emplacement) + '</p>' : '') +
           '<span class="code-retrait">' + esc(r.code) + '</span><br>' +
+          (r.point ? '<p class="meta"><b>' + esc(r.point) + '</b></p>' : '') +
           (r.creneau ? '<span class="etiquette ok">Passe ' + esc(r.creneau) + '</span><br>' : '') +
           '<span class="etiquette ' + (j <= 1 ? 'urgent' : 'fini') + '">Limite : ' + esc(dateLongue(r.limite)) + '</span></div>' +
           '<div class="actions"><button class="bouton petit" data-ok="' + esc(r.code) + '">Retrait effectué</button><button class="bouton second petit" data-ecrire-client="' + esc(r.article.id || '') + '" data-email="' + esc(r.email) + '">' + ICONES.bulle + 'Écrire</button><button class="bouton second petit" data-ko="' + esc(r.code) + '">Annuler</button></div></div>';
@@ -1433,8 +1573,8 @@
       .catch(function (err) { chargement(btn, false); erreur(err); });
   }
 
-  function equipeAjouter(zone) {
-    var c = cfg(), b = etat.brouillon;
+  function equipeAjouter(zone, brouillon, idEdition) {
+    var c = cfg(), b = brouillon || etat.brouillon;
     zone.innerHTML = '<form class="pile" id="fa">' +
       '<div><p class="champ" style="margin:0 0 6px">Photos <small>(1 à 3, la première sert de couverture)</small></p><div class="photos-saisie" id="ph"></div></div>' +
       '<label class="champ">Titre<input name="titre" required maxlength="80" placeholder="Ex. Veste en jean Levi\'s"></label>' +
@@ -1442,7 +1582,8 @@
       '<label class="champ">Sous-catégorie<select name="sousCategorie"></select></label>' +
       '<label class="champ">Type d\'article <small>(sert au bilan CO₂ des clients)</small><select name="typeCO2"></select></label>' +
       '<div class="rangee"><label class="champ">Prix (€)<input name="prix" inputmode="decimal" required placeholder="12"></label>' +
-      '<div id="champ-taille"></div></div>' +
+      '<label class="champ">Prix soldé <small>(€, facultatif)</small><input name="prixSolde" inputmode="decimal" placeholder="—"></label></div>' +
+      '<div id="champ-taille"></div>' +
       '<label class="champ">État<select name="etat"><option>Très bon état</option><option>Bon état</option><option>État correct</option><option>Neuf avec étiquette</option><option>À rénover</option></select></label>' +
       '<label class="champ">Description <small>(facultatif)</small><textarea name="description" maxlength="600" placeholder="Ce qui donne envie : style, usage, histoire de la pièce…"></textarea></label>' +
       '<fieldset class="bloc-specs"><legend>Caractéristiques techniques <small>(facultatif)</small></legend>' +
@@ -1452,12 +1593,14 @@
       '<label class="champ">Détails techniques<textarea name="caracteristiques" maxlength="1500" placeholder="Puissance, contenance, composition, défauts précis, accessoires fournis…"></textarea></label></fieldset>' +
       '<div class="rangee"><label class="champ">Étiquette <small>(facultatif)</small><select name="etiquette"><option value="">Aucune</option>' + (c.etiquettes || []).map(function (x) { return '<option>' + esc(x) + '</option>'; }).join('') + '</select></label>' +
       '<label class="champ">Provenance<select name="provenance"><option>Stock EBE</option><option>Don</option><option>Dépôt-vente</option></select></label></div>' +
-      '<label class="case"><input type="checkbox" name="aLaUne" value="1"><span>Mettre à la une sur l\'accueil</span></label>' +
+      '<label class="case"><input type="checkbox" name="aLaUne" value="1"' + (b.aLaUne ? ' checked' : '') + '><span>Mettre à la une sur l\'accueil</span></label>' +
+      '<label class="case"><input type="checkbox" name="volumineux" value="1"' + (b.volumineux ? ' checked' : '') + '><span>Objet volumineux (retrait uniquement aux points qui l\'acceptent ; automatique pour les meubles)</span></label>' +
       '<div class="rangee"><label class="champ">Préparé par <small>(prénom affiché)</small><input name="preparePar" placeholder="Votre prénom"></label>' +
       '<label class="champ">Poids <small>(kg, facultatif)</small><input name="poids" inputmode="decimal" placeholder="auto"></label></div>' +
       '<label class="champ">Emplacement dans le stock <small>(équipe seulement)</small><input name="emplacement" placeholder="Ex. étagère B2"></label>' +
-      '<button class="bouton">Mettre en ligne</button></form>';
+      '<button class="bouton">' + (idEdition ? 'Enregistrer les modifications' : 'Mettre en ligne') + '</button></form>';
     var f = document.getElementById('fa');
+    if (b.teste) f.teste.checked = true;
     function remplirTypes() {
       var types = (c.typesCO2 || []).filter(function (t) { return t.categorie === f.categorie.value; });
       f.typeCO2.innerHTML = '<option value="">Je ne sais pas (valeur prudente)</option>' + types.map(function (t) { return '<option>' + esc(t.type) + '</option>'; }).join('');
@@ -1480,8 +1623,8 @@
     remplirTaille();
     f.categorie.addEventListener('change', function () { remplirTypes(); remplirSousCats(); b.typeCO2 = ''; b.sousCategorie = ''; b.taille = ''; remplirTaille(); });
     f.sousCategorie.addEventListener('change', function () { b.taille = ''; remplirTaille(); });
-    ['titre', 'typeCO2', 'prix', 'etat', 'description', 'etiquette', 'provenance', 'preparePar', 'poids', 'emplacement', 'marque', 'matiere', 'largeur', 'profondeur', 'hauteur', 'caracteristiques'].forEach(function (k) {
-      if (b[k]) f[k].value = b[k];
+    ['titre', 'typeCO2', 'prix', 'prixSolde', 'etat', 'description', 'etiquette', 'provenance', 'preparePar', 'poids', 'emplacement', 'marque', 'matiere', 'largeur', 'profondeur', 'hauteur', 'caracteristiques'].forEach(function (k) {
+      if (b[k] != null && b[k] !== '') f[k].value = b[k];
     });
     f.addEventListener('input', function (e) { var el = e.target; if (el.name && el.type !== 'checkbox' && el.type !== 'file') b[el.name] = el.value; });
     f.addEventListener('change', function (e) { var el = e.target; if (el.name && el.type !== 'checkbox') b[el.name] = el.value; });
@@ -1490,7 +1633,12 @@
       e.preventDefault();
       if (!b.photos.length) { toast('Ajoutez au moins une photo.', true); return; }
       var btn = f.querySelector('.bouton'); chargement(btn, true, 'Envoi des photos…');
-      var art = Object.fromEntries(new FormData(f)); art.aLaUne = !!art.aLaUne; art.teste = !!art.teste;
+      var art = Object.fromEntries(new FormData(f)); art.aLaUne = !!art.aLaUne; art.teste = !!art.teste; art.volumineux = !!art.volumineux;
+      if (idEdition) {
+        return api('equipeModifierArticle', { id: idEdition, article: art, photos: b.photos }).then(function () {
+          etat.articles = null; delete memoire['equipeArticles{}']; toast('Article modifié.'); retour();
+        }).catch(function (err) { chargement(btn, false); erreur(err); });
+      }
       api('equipeAjouterArticle', { article: art, photos: b.photos }).then(function () {
         etat.brouillon = { photos: [], categorie: art.categorie, sousCategorie: art.sousCategorie, etat: art.etat, provenance: art.provenance, preparePar: art.preparePar };
         etat.articles = null; toast('Article en ligne ! Les alertes correspondantes partiront d\'ici 15 minutes.'); vues.equipe();
@@ -1507,7 +1655,8 @@
       zone.innerHTML = '<p class="sous-titre">L\'étoile met l\'article à la une. « Retiré » le masque de l\'app (abîmé, donné, vendu ailleurs).</p>' + liste.map(function (a) {
         var sel = a.statut === 'réservé' || a.statut === 'proposé' ? '<span class="etiquette urgent">' + esc(a.statut) + '</span>' :
           '<select data-statut="' + esc(a.id) + '" aria-label="Statut">' + statuts.map(function (s) { return '<option' + (s === a.statut ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select>';
-        return '<div class="ligne-article">' + '<div class="vignette">' + imgPhoto(a.photos[0], '', 200) + '</div><div><h3>' + esc(a.titre) + '</h3><p>' + prix(a.prix) + (a.emplacement ? ', ' + esc(a.emplacement) : '') + '</p>' +
+        return '<div class="ligne-article">' + '<div class="vignette">' + imgPhoto(a.photos[0], '', 200) + '</div><div><h3>' + esc(a.titre) + '</h3><p>' + prix(a.prix) + (a.prixInitial > a.prix ? ' <s>' + prix(a.prixInitial) + '</s>' : '') + (a.emplacement ? ', ' + esc(a.emplacement) : '') + '</p>' +
+          '<button class="lien" data-modifier="' + esc(a.id) + '">Modifier</button>' +
           '<div class="outils"><button class="etoile" data-une="' + esc(a.id) + '" aria-pressed="' + !!a.aLaUne + '" aria-label="À la une">' + ICONES.etoile + '</button>' +
           '<select data-etiq="' + esc(a.id) + '" aria-label="Étiquette"><option value="">Sans étiquette</option>' + (c.etiquettes || []).map(function (x) { return '<option' + (x === a.etiquette ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select></div></div>' + sel + '</div>';
       }).join('');
@@ -1517,6 +1666,7 @@
         return api('equipeMettreEnAvant', { idArticle: id, aLaUne: une.getAttribute('aria-pressed') === 'true', etiquette: et.value }).then(function () { etat.articles = null; a.aLaUne = une.getAttribute('aria-pressed') === 'true'; });
       }
       zone.onclick = function (e) {
+        var md = e.target.closest('[data-modifier]'); if (md) { aller('editerArticle', { article: parId[md.dataset.modifier] }); return; }
         var u = e.target.closest('[data-une]'); if (!u) return;
         u.setAttribute('aria-pressed', String(u.getAttribute('aria-pressed') !== 'true'));
         avant(u.dataset.une).then(function () { toast(u.getAttribute('aria-pressed') === 'true' ? 'Mis à la une.' : 'Retiré de la une.'); }).catch(erreur);
@@ -1539,6 +1689,7 @@
       var lib = { 'nouveau': 'urgent', 'accepté': 'ok', 'refusé': 'fini', 'reçu': 'fini' };
       zone.innerHTML = l.map(function (d) {
         return '<div class="resa">' + vignette({ photos: d.photos, titre: d.description }) + '<div><h3>' + esc(d.description) + '</h3>' +
+          (d.photos.length ? '<div class="photos-don">' + d.photos.map(function (ph) { return '<button data-agrandir>' + imgPhoto(ph, 'Photo du don', 800) + '</button>'; }).join('') + '</div>' : '') +
           '<p class="meta">' + esc(d.prenom) + (d.telephone ? ', ' + esc(d.telephone) : '') + ', ' + esc(dateLongue(d.date)) + '</p>' +
           '<p class="meta">' + esc(d.categorie) + ', ' + esc(d.mode) + (d.adresse ? ' (' + esc(d.adresse) + ')' : '') + '</p>' +
           '<span class="etiquette ' + (lib[d.statut] || 'fini') + '">' + esc(d.statut) + '</span>' + (d.reponse ? '<p class="reponse">« ' + esc(d.reponse) + ' »</p>' : '') + '</div>' +
@@ -1546,6 +1697,7 @@
             : d.statut === 'accepté' ? '<button class="bouton second petit" data-don="' + esc(d.id) + '" data-s="reçu">Marquer comme reçu</button>' : '') + '</div></div>';
       }).join('');
       zone.onclick = function (e) {
+        var ag = e.target.closest('[data-agrandir]'); if (ag) { var im = ag.querySelector('img'); if (im) ouvrirImage(im.src); return; }
         var b = e.target.closest('[data-don]'); if (!b) return;
         var s = b.dataset.s;
         var envoyer = function (msg) {
@@ -1600,11 +1752,39 @@
           var long = ['message_accueil', 'presentation_ebe', 'delai_reponse'].indexOf(x.cle) >= 0;
           return '<label class="champ">' + esc(LIBELLES_REGLAGES[x.cle] || x.cle) + (long ? '<textarea name="' + esc(x.cle) + '" maxlength="600">' + esc(x.valeur) + '</textarea>' : '<input name="' + esc(x.cle) + '" value="' + esc(x.valeur) + '" maxlength="300">') +
             (x.aide ? '<small class="aide">' + esc(x.aide) + '</small>' : '') + '</label>';
-        }).join('') + '<button class="bouton">Enregistrer</button></form>';
+        }).join('') + '<button class="bouton">Enregistrer</button></form>' +
+        '<h2 class="section">Points de retrait</h2><div id="points-equipe"><p class="meta">Chargement…</p></div>';
+      dessinerPointsEquipe();
       document.getElementById('freg').onsubmit = function (e) {
         e.preventDefault();
         var btn = e.target.querySelector('.bouton'); chargement(btn, true);
         api('equipeSauverReglages', { valeurs: Object.fromEntries(new FormData(e.target)) }).then(recharger).then(function () { chargement(btn, false); toast('Réglages enregistrés. Ils s\'affichent tout de suite dans l\'app.'); })
+          .catch(function (err) { chargement(btn, false); erreur(err); });
+      };
+    }).catch(erreur);
+  }
+  function dessinerPointsEquipe() {
+    var z = document.getElementById('points-equipe'); if (!z) return;
+    api('equipePoints').then(function (pts) {
+      var carteP = function (x, i) {
+        return '<fieldset class="bloc-specs point-edit" data-i="' + i + '"><legend>' + esc(x.nom || 'Nouveau point') + '</legend>' +
+          '<label class="champ">Nom<input name="nom" value="' + esc(x.nom || '') + '"></label><label class="champ">Adresse<input name="adresse" value="' + esc(x.adresse || '') + '"></label>' +
+          '<label class="champ">Horaires<input name="horaires" value="' + esc(x.horaires || '') + '"></label>' +
+          '<label class="champ">Jours d\'ouverture <small>(séparés par des virgules, vide = jours par défaut)</small><input name="jours" value="' + esc(x.jours || '') + '" placeholder="mardi, mercredi, jeudi"></label>' +
+          [['vente', 'Retrait des achats'], ['volumineux', 'Objets volumineux'], ['location', 'Location de matériel'], ['actif', 'Actif']].map(function (c0) {
+            return '<label class="case"><input type="checkbox" name="' + c0[0] + '"' + (x[c0[0]] ? ' checked' : '') + '><span>' + c0[1] + '</span></label>'; }).join('') + '</fieldset>';
+      };
+      z.innerHTML = pts.map(carteP).join('') + '<div class="pile"><button class="bouton second" id="ajout-point">Ajouter un point</button><button class="bouton" id="sauver-points">Enregistrer les points</button></div>';
+      document.getElementById('ajout-point').onclick = function () { pts.push({ actif: true, vente: true }); z.querySelector('.pile').insertAdjacentHTML('beforebegin', carteP(pts[pts.length - 1], pts.length - 1)); };
+      document.getElementById('sauver-points').onclick = function () {
+        var btn = this;
+        var liste = [].slice.call(z.querySelectorAll('.point-edit')).map(function (fs) {
+          var i = Number(fs.dataset.i), g = function (n0) { return fs.querySelector('[name="' + n0 + '"]'); };
+          return { ligne: pts[i].ligne, nom: g('nom').value, adresse: g('adresse').value, horaires: g('horaires').value, jours: g('jours').value,
+                   vente: g('vente').checked, volumineux: g('volumineux').checked, location: g('location').checked, actif: g('actif').checked };
+        });
+        chargement(btn, true);
+        api('equipeSauverPoints', { points: liste }).then(recharger).then(function () { chargement(btn, false); toast('Points de retrait enregistrés.'); dessinerPointsEquipe(); })
           .catch(function (err) { chargement(btn, false); erreur(err); });
       };
     }).catch(erreur);
@@ -1626,21 +1806,30 @@
       '<div class="rangee"><label class="champ">Bouton<input name="bouton" maxlength="30" value="' + esc(n.bouton || '') + '" placeholder="Voir la sélection"></label>' +
       '<label class="champ">Mène vers<select name="lien">' + liens.map(function (l) { return '<option value="' + esc(l) + '"' + (l === n.lien ? ' selected' : '') + '>' + esc(l || 'Rien') + '</option>'; }).join('') +
         (n.lien && liens.indexOf(n.lien) < 0 ? '<option selected>' + esc(n.lien) + '</option>' : '') + '</select></label></div>' +
+      '<div><p class="champ" style="margin:0 0 6px">Image de fond <small>(facultatif, remplace la couleur du thème)</small></p><div class="photos-saisie" id="ph-anim"></div></div>' +
+      '<div class="rangee"><label class="champ">Remise <small>(%, facultatif)</small><input name="remise" inputmode="decimal" value="' + esc(n.remise || '') + '" placeholder="Ex. 50"></label>' +
+      '<label class="champ">Sur<select name="remiseSur">' + ['Tout', 'Location', 'À la une'].concat(c.categories || [], c.etiquettes || []).map(function (x) { return '<option' + (x === (n.remiseSur || 'Tout') ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select></label></div>' +
+      '<label class="case"><input type="checkbox" name="popup" value="1"' + (n.popup ? ' checked' : '') + '><span>Afficher aussi en pop-up à l\'ouverture de l\'app (une fois par jour et par personne)</span></label>' +
       '<label class="case"><input type="checkbox" name="active" value="1"' + (n.active ? ' checked' : '') + '><span>Active (affichée pendant la période)</span></label>' +
       '<p class="meta">Astuce : « Mène vers » une étiquette (ex. Idée cadeau) affiche tous les articles qui la portent.</p>' +
       '<button class="bouton">Enregistrer</button>' + (n.id ? '<button type="button" class="bouton danger" id="suppr">Supprimer</button>' : '') + '</form>';
     var f = document.getElementById('fn');
+    var imageAnim = n.image ? [n.image] : [];
+    var dessinerImg = brancherPhotos(document.getElementById('ph-anim'), imageAnim, 1); dessinerImg();
+    document.getElementById('ph-anim').addEventListener('click', function () { setTimeout(apercu, 400); });
     function apercu() {
       var d = Object.fromEntries(new FormData(f));
       arreterParticules();
       var ap = document.getElementById('apercu');
-      ap.innerHTML = htmlBandeaux([{ theme: cle(d.theme), titre: d.titre || 'Titre du bandeau', texte: d.texte, bouton: d.bouton, lien: d.bouton ? { type: 'aucun' } : null }]);
+      ap.innerHTML = htmlBandeaux([{ theme: cle(d.theme), titre: d.titre || 'Titre du bandeau', texte: d.texte, bouton: d.bouton, lien: d.bouton ? { type: 'aucun' } : null, image: imageAnim[0] || '', remise: Number(d.remise) || 0 }]);
       ap.querySelectorAll('canvas').forEach(function (cv) { lancerParticules(cv, cv.dataset.particules); });
     }
     f.addEventListener('input', apercu); f.addEventListener('change', apercu); apercu();
     f.onsubmit = function (e) {
       e.preventDefault();
-      var d = Object.fromEntries(new FormData(f)); d.active = !!d.active; d.id = n.id; d.image = n.image || '';
+      var d = Object.fromEntries(new FormData(f)); d.active = !!d.active; d.popup = !!d.popup; d.id = n.id;
+      d.image = imageAnim[0] && !/^data:/.test(imageAnim[0]) ? imageAnim[0] : '';
+      if (imageAnim[0] && /^data:/.test(imageAnim[0])) d.imageData = imageAnim[0];
       var btn = f.querySelector('.bouton'); chargement(btn, true);
       api('equipeSauverAnimation', { animation: d }).then(recharger).then(function () { toast('Animation enregistrée.'); retour(); }).catch(function (err) { chargement(btn, false); erreur(err); });
     };
@@ -1773,7 +1962,7 @@
       var ag = e.target.closest('[data-agrandir]');
       if (ag) { var im = ag.querySelector('img'); if (im) ouvrirImage(im.src); return; }
       var s = e.target.closest('[data-signaler]');
-      if (s) modale('Signaler ce message ?', 'L\'équipe de direction de l\'EBE en sera informée.', [{ texte: 'Signaler', valeur: true, style: 'danger' }, { texte: 'Annuler', valeur: false, style: 'second' }])
+      if (s) modale('Signaler ce message ?', 'L\'équipe de l\'Entreprise à But d\'Emploi en sera informée.', [{ texte: 'Signaler', valeur: true, style: 'danger' }, { texte: 'Annuler', valeur: false, style: 'second' }])
         .then(function (ok) { if (ok) api('signalerMessage', { id: s.dataset.signaler }).then(function () { toast('Message signalé. Merci.'); charger(); }).catch(erreur); });
     };
     document.getElementById('fm').onsubmit = function (e) {
@@ -1880,7 +2069,7 @@
     var dispo = m.statut === 'disponible';
     return '<div class="carte outil' + (dispo ? '' : ' indispo') + '" data-outil="' + esc(m.id) + '" role="link" tabindex="0">' +
       '<div class="photo">' + imgPhoto(m.photos[0], '', 600) + (dispo ? '' : '<span class="voile">' + esc(m.statut) + '</span>') +
-      '<span class="prix">' + prix(m.tarifJour) + '<small>/jour</small></span></div><h3>' + esc(m.nom) + '</h3><p>' + esc(m.categorie) + (m.tarifWeekend ? ', week-end ' + prix(m.tarifWeekend) : '') + '</p></div>';
+      htmlPrix(m.tarifJour, m.tarifJourInitial, '/jour') + '</div><h3>' + esc(m.nom) + '</h3><p>' + esc(m.categorie) + (m.tarifWeekend ? ', week-end ' + prix(m.tarifWeekend) : '') + '</p></div>';
   }
   vues.louer = function () {
     var c = cfg(), L = c.location || {};
@@ -1900,6 +2089,7 @@
         var t = sansAccents([m.nom, m.categorie, m.description, m.caracteristiques].join(' '));
         return mots.every(function (w) { return variantes(w).some(function (v) { return t.indexOf(racine(v)) >= 0; }); });
       }).sort(function (a, b) { return (b.statut === 'disponible') - (a.statut === 'disponible'); });
+      noterRecherche(etat.rechercheOutil, l.length, 'location');
       z.innerHTML = l.length ? '<div class="grille">' + l.map(carteOutil).join('') + '</div>' : '<div class="vide"><strong>Aucun outil ne correspond</strong>Une demande précise ? Écrivez à l\'équipe depuis l\'onglet Messages ou via « Signaler une idée ».</div>';
     }
     $vue.querySelector('.recherche input').oninput = function (e) { etat.rechercheOutil = e.target.value; dessiner(); };
@@ -1915,7 +2105,7 @@
     var dispo = m.statut === 'disponible';
     var photos = m.photos.length ? m.photos : [''];
     $vue.innerHTML = boutonRetour() +
-      '<div class="galerie"><div class="defile">' + photos.map(function (ref) { return '<div>' + imgPhoto(ref, m.nom, 1200) + '</div>'; }).join('') + '</div><span class="prix grand">' + prix(m.tarifJour) + '<small>/jour</small></span></div>' +
+      '<div class="galerie"><div class="defile">' + photos.map(function (ref) { return '<div>' + imgPhoto(ref, m.nom, 1200) + '</div>'; }).join('') + '</div>' + htmlPrix(m.tarifJour, m.tarifJourInitial, '/jour', true) + '</div>' +
       '<article class="fiche"><h2>' + esc(m.nom) + '</h2><div class="details"><span>' + esc(m.categorie) + '</span>' + (m.etat ? '<span>' + esc(m.etat) + '</span>' : '') + '</div>' +
       '<div class="rangee-boutons"><button class="bouton second petit" id="question">' + ICONES.bulle + 'Poser une question</button></div>' +
       (m.description ? '<p class="desc">' + esc(m.description) + '</p>' : '') +
@@ -1925,7 +2115,7 @@
         (m.tarifWeekend ? '<div><dt>Le week-end</dt><dd>' + prix(m.tarifWeekend) + '</dd></div>' : '') +
         (m.tarifSemaine ? '<div><dt>La semaine</dt><dd>' + prix(m.tarifSemaine) + '</dd></div>' : '') +
         (m.caution ? '<div><dt>Caution</dt><dd>' + prix(m.caution) + ' <small>(' + esc(L.caution || '') + ')</small></dd></div>' : '') + '</dl></section>' +
-      (dispo ? '<h2 class="section">Vos dates</h2><p class="meta" id="aide-dates">Touchez le jour de retrait, puis le jour de retour.</p><div id="calendrier"></div>' +
+      (dispo ? '<h2 class="section">Vos dates</h2><p class="meta" id="aide-dates">Retrait et retour à <b>' + esc(pointLocation().nom || '') + '</b>' + (pointLocation().adresse ? ', ' + esc(pointLocation().adresse) : '') + '. Touchez le jour de retrait (à partir de demain), puis le jour de retour.</p><div id="calendrier"></div>' +
         ((c.creneaux || []).length ? '<h2 class="section">Moment du retrait</h2><div class="choix" id="moments">' + c.creneaux.map(function (x) { return '<button class="puce" data-moment="' + esc(x) + '" aria-pressed="false">' + esc(x) + '</button>'; }).join('') + '</div>' : '') +
         (m.consommables.length ? '<h2 class="section">Consommables</h2><div class="pile" id="consos">' + m.consommables.map(function (x) { return '<label class="case"><input type="checkbox" value="' + esc(x.nom) + '"><span>' + esc(x.nom) + ', ' + prix(x.prix) + '</span></label>'; }).join('') + '</div>' : '') +
         '<section class="encadre" style="margin-top:16px"><h3>Avant de réserver</h3><p>' + esc(L.conditions || '') + '</p></section>'
@@ -1937,10 +2127,12 @@
     if (!dispo) return;
     var pris = m.pris || [];
     api('outil', { id: m.id }).then(function (o) { pris = o.pris || []; m.pris = pris; dessinerCal(); }).catch(function () {});
-    var ouverts = (c.joursOuverture || []).length ? c.joursOuverture : JOURS;
+    var ptLoc = pointLocation();
+    var ouverts = (ptLoc.jours && ptLoc.jours.length) ? ptLoc.jours : (c.joursOuverture || []).length ? c.joursOuverture : JOURS;
     function dessinerCal() {
       var cal = document.getElementById('calendrier'); if (!cal) return;
       var auj = new Date(); auj.setHours(12, 0, 0, 0);
+      var premier = new Date(auj.getTime() + (c.delaiPreparationJours == null ? 1 : c.delaiPreparationJours) * 86400000);
       var fin = new Date(auj.getTime() + (L.horizon || 60) * 86400000);
       var html = '', mois = new Date(auj.getFullYear(), auj.getMonth(), 1, 12);
       while (mois <= fin) {
@@ -1949,7 +2141,7 @@
         for (var k = 0; k < dec; k++) html += '<span></span>';
         var d = new Date(mois.getTime());
         while (d.getMonth() === mois.getMonth()) {
-          var i = iso(d), passe = d < auj || d > fin, occupe = pris.indexOf(i) >= 0, ferme = ouverts.indexOf(JOURS[d.getDay()]) < 0;
+          var i = iso(d), passe = d < premier || d > fin, occupe = pris.indexOf(i) >= 0, ferme = ouverts.indexOf(JOURS[d.getDay()]) < 0;
           var sel = choix.debut && choix.fin ? (i >= choix.debut && i <= choix.fin) : i === choix.debut;
           var cls = ['jour', passe ? 'passe' : '', occupe ? 'occupe' : '', ferme ? 'ferme' : '', sel ? 'sel' : '', i === choix.debut ? 'bord' : '', i === choix.fin ? 'bord' : ''].filter(Boolean).join(' ');
           html += '<button class="' + cls + '" data-j="' + i + '"' + (passe || occupe ? ' disabled' : '') + ' aria-label="' + esc(dateLongue(d.getTime())) + (occupe ? ', déjà loué' : '') + '">' + d.getDate() + '</button>';
@@ -2015,6 +2207,14 @@
     document.getElementById('ecrire').onclick = function () { aller('conversation', { idArticle: r.outil.id }); };
   };
 
+  /** Ouvre la fiche d'un article, même s'il n'est plus dans le catalogue (réservé, retiré). */
+  function voirArticle(id) {
+    if (trouverArticle(id)) return aller('article', { id: id });
+    api('article', { id: id }).then(function (a) {
+      etat.articles = (etat.articles || []).concat([a]);
+      aller('article', { id: id });
+    }).catch(function () { toast('Cet article n\'est plus visible dans le catalogue.', true); });
+  }
   function dessinerMesLocations(l) {
     var z = document.getElementById('mes-locations'); if (!z) return;
     if (!l.length) { z.innerHTML = ''; return; }
@@ -2022,7 +2222,7 @@
     var finies = l.filter(function (x) { return actives.indexOf(x) < 0; }).slice(0, 5);
     var carteLoc = function (x) {
       var lib = LIB_LOC[x.statut] || [x.statut, 'fini'], act = actives.indexOf(x) >= 0;
-      return '<div class="resa' + (act ? '' : ' passee') + '">' + vignette({ photos: [x.photo], titre: x.nom }) + '<div><h3>' + esc(x.nom) + '</h3>' +
+      return '<div class="resa' + (act ? '' : ' passee') + '"><button class="vers-produit" data-voir-outil="' + esc(x.idOutil) + '">' + vignette({ photos: [x.photo], titre: x.nom }) + '</button><div><h3>' + esc(x.nom) + '</h3>' +
         '<p class="meta">Du ' + esc(dateLongue(x.debut)) + ' au ' + esc(dateLongue(x.fin)) + '</p><p class="meta">' + prix(x.prix) + (x.caution ? ', caution ' + prix(x.caution) : '') + '</p>' +
         (act ? '<span class="code-retrait">' + esc(x.code) + '</span><br>' : '') + '<span class="etiquette ' + lib[1] + '">' + esc(lib[0]) + '</span></div>' +
         '<div class="actions">' + (act ? '<button class="bouton second petit" data-ecrire-outil="' + esc(x.idOutil) + '">' + ICONES.bulle + 'Écrire à l\'équipe</button>' : '') +
@@ -2034,6 +2234,9 @@
       '<h2 class="section">Mes achats</h2>';
     z.onclick = function (e) {
       var w = e.target.closest('[data-ecrire-outil]'); if (w) { aller('conversation', { idArticle: w.dataset.ecrireOutil }); return; }
+      var vo = e.target.closest('[data-voir-outil]');
+      if (vo) { var go = function () { if ((etat.outils || []).some(function (o) { return o.id === vo.dataset.voirOutil; })) aller('outil', { id: vo.dataset.voirOutil }); else toast('Cet outil n\'est plus proposé.', true); };
+        if (etat.outils) go(); else api('materiel').then(function (lm) { etat.outils = lm; go(); }).catch(erreur); return; }
       var ed = e.target.closest('[data-edl]'); if (ed) { aller('voirEdl', { loc: l.filter(function (x) { return x.code === ed.dataset.edl; })[0] }); return; }
       var an = e.target.closest('[data-annuler-loc]'); if (!an) return;
       modale('Annuler cette location ?', 'L\'outil sera de nouveau disponible pour d\'autres personnes.', [{ texte: 'Oui, annuler', valeur: true, style: 'danger' }, { texte: 'Garder ma location', valeur: false, style: 'second' }])
@@ -2119,15 +2322,16 @@
     };
   };
 
-  function equipeMaterielUI(zone) {
-    zone.innerHTML = '<button class="bouton" id="nouvel-outil">Ajouter un outil</button><div id="lm"><p class="meta">Chargement…</p></div>';
-    document.getElementById('nouvel-outil').onclick = function () { aller('ajoutOutil'); };
+  function equipeMaterielUI(zone, sansBouton) {
+    zone.innerHTML = (sansBouton ? '' : '<button class="bouton" id="nouvel-outil">Ajouter un outil</button>') + '<div id="lm"><p class="meta">Chargement…</p></div>';
+    var no = document.getElementById('nouvel-outil'); if (no) no.onclick = function () { aller('ajoutOutil', {}); };
     avecMemoire('equipeMateriel').then(function (l) {
       var lm = document.getElementById('lm'); if (!lm) return;
       lm.innerHTML = l.length ? l.map(function (m) {
-        return '<div class="ligne-article"><div class="vignette">' + imgPhoto(m.photos[0], '', 200) + '</div><div><h3>' + esc(m.nom) + '</h3><p>' + prix(m.tarifJour) + '/jour' + (m.emplacement ? ', ' + esc(m.emplacement) : '') + '</p></div>' +
+        return '<div class="ligne-article"><div class="vignette">' + imgPhoto(m.photos[0], '', 200) + '</div><div><h3>' + esc(m.nom) + '</h3><p>' + prix(m.tarifJour) + '/jour' + (m.emplacement ? ', ' + esc(m.emplacement) : '') + '</p><button class="lien" data-modifier-outil="' + esc(m.id) + '">Modifier</button></div>' +
           '<select data-statut-outil="' + esc(m.id) + '" aria-label="Statut">' + ['disponible', 'en réparation', 'retiré'].map(function (s0) { return '<option' + (s0 === m.statut ? ' selected' : '') + '>' + s0 + '</option>'; }).join('') + '</select></div>';
       }).join('') : '<div class="vide"><strong>Aucun outil</strong>Ajoutez le premier outil de l\'outilthèque.</div>';
+      lm.onclick = function (e) { var b0 = e.target.closest('[data-modifier-outil]'); if (b0) aller('ajoutOutil', { outil: l.filter(function (x) { return x.id === b0.dataset.modifierOutil; })[0] }); };
       lm.onchange = function (e) {
         var sl = e.target.closest('[data-statut-outil]'); if (!sl) return;
         api('equipeStatutMateriel', { id: sl.dataset.statutOutil, statut: sl.value }).then(function () { delete memoire['materiel{}']; toast('Statut mis à jour.'); }).catch(erreur);
@@ -2135,9 +2339,9 @@
     }).catch(erreur);
   }
 
-  vues.ajoutOutil = function () {
-    var L = cfg().location || {}, photos = [];
-    $vue.innerHTML = boutonRetour() + '<h1 class="titre-page">Ajouter un outil</h1><form class="pile" id="fo">' +
+  vues.ajoutOutil = function (p) {
+    var L = cfg().location || {}, o = (p && p.outil) || null, photos = o ? o.photos.slice() : [];
+    $vue.innerHTML = boutonRetour() + '<h1 class="titre-page">' + (o ? 'Modifier l\'outil' : 'Ajouter un outil') + '</h1><form class="pile" id="fo">' +
       '<div><p class="champ" style="margin:0 0 6px">Photos <small>(1 à 3)</small></p><div class="photos-saisie" id="ph-o"></div></div>' +
       '<label class="champ">Nom<input name="nom" required maxlength="80" placeholder="Ex. Perceuse-visseuse sans fil 18 V"></label>' +
       '<label class="champ">Catégorie<select name="categorie">' + (L.categories || []).map(function (x) { return '<option>' + esc(x) + '</option>'; }).join('') + '</select></label>' +
@@ -2147,17 +2351,248 @@
       '<label class="champ">Caractéristiques<textarea name="caracteristiques" placeholder="Puissance, batterie, accessoires fournis…"></textarea></label>' +
       '<label class="champ">Consommables en vente <small>(nom=prix, séparés par des virgules)</small><input name="consommables" placeholder="Forets bois=4.5, Embouts=3"></label>' +
       '<div class="rangee"><label class="champ">État<input name="etat" placeholder="Très bon état"></label><label class="champ">Emplacement<input name="emplacement" placeholder="Étagère C1"></label></div>' +
-      '<button class="bouton">Mettre en location</button></form>';
+      '<label class="champ">Remise sur cet outil <small>(%, facultatif)</small><input name="remise" inputmode="decimal" placeholder="Ex. 20"></label>' +
+      '<button class="bouton">' + (o ? 'Enregistrer les modifications' : 'Mettre en location') + '</button></form>';
+    if (o) {
+      var fo0 = document.getElementById('fo');
+      var vals = { nom: o.nom, categorie: o.categorie, tarifJour: o.tarifJourBase, tarifWeekend: o.tarifWeekendBase, tarifSemaine: o.tarifSemaineBase, caution: o.caution,
+        description: o.description, caracteristiques: o.caracteristiques, consommables: o.consommablesTexte, etat: o.etat, emplacement: o.emplacement, remise: o.remiseOutil };
+      Object.keys(vals).forEach(function (k) { if (vals[k] != null && vals[k] !== '' && fo0[k]) fo0[k].value = vals[k]; });
+    }
     brancherPhotos(document.getElementById('ph-o'), photos, 3)();
     document.getElementById('fo').onsubmit = function (e) {
       e.preventDefault();
       if (!photos.length) { toast('Ajoutez au moins une photo.', true); return; }
       var btn = e.target.querySelector('.bouton'); chargement(btn, true, 'Envoi…');
-      api('equipeAjouterMateriel', { outil: Object.fromEntries(new FormData(e.target)), photos: photos }).then(function () {
-        delete memoire['materiel{}']; delete memoire['equipeMateriel{}']; toast('Outil mis en location.'); retour();
+      (o ? api('equipeModifierMateriel', { id: o.id, outil: Object.fromEntries(new FormData(e.target)), photos: photos })
+        : api('equipeAjouterMateriel', { outil: Object.fromEntries(new FormData(e.target)), photos: photos })).then(function () {
+        delete memoire['materiel{}']; delete memoire['equipeMateriel{}']; toast(o ? 'Outil modifié.' : 'Outil mis en location.'); retour();
       }).catch(function (err) { chargement(btn, false); erreur(err); });
     };
   };
+
+  // ================= Tableau de bord de l'équipe =================
+  function equipeTableau(zone, rafraichir) {
+    zone.innerHTML = '<p class="meta">Calcul en cours…</p>';
+    var nb = function (x) { return x == null ? '—' : String(x).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f'); };
+    var tuile = function (val, lib, aller0, alerte) { return '<button class="tuile' + (alerte ? ' alerte' : '') + '"' + (aller0 ? ' data-aller="' + aller0 + '"' : '') + '><b>' + val + '</b><span>' + esc(lib) + '</span></button>'; };
+    var barres = function (l, unite, max) {
+      if (!l || !l.length) return '<p class="meta">Pas encore de données.</p>';
+      var m = Math.max.apply(null, l.map(function (x) { return x.nb; })) || 1;
+      return '<div class="barres">' + l.slice(0, max || 8).map(function (x) {
+        return '<div class="barre"><span class="lib">' + esc(x.nom) + '</span><span class="jauge"><i style="width:' + Math.max(4, Math.round(x.nb / m * 100)) + '%"></i></span><span class="val">' + nb(x.nb) + (unite || '') + '</span></div>';
+      }).join('') + '</div>';
+    };
+    var puces = function (l, vide) { return l && l.length ? '<div class="choix">' + l.map(function (x) { return '<span class="puce statique">' + esc(x.nom) + (x.nb > 1 ? ' <em>' + x.nb + '</em>' : '') + '</span>'; }).join('') + '</div>' : '<p class="meta">' + vide + '</p>'; };
+    var section = function (titre, contenu, aide) { return '<section class="bloc-tdb"><h2 class="section">' + titre + '</h2>' + (aide ? '<p class="meta">' + aide + '</p>' : '') + contenu + '</section>'; };
+    var dessiner = function (t) {
+      var a = t.aujourdhui, v = t.ventes, st = t.stock, lo = t.location, cl = t.clients, d = t.demande, im = t.impact;
+      var somme = function (l) { return (l || []).reduce(function (s0, x) { return s0 + x.nb; }, 0); };
+      var maxCa = Math.max.apply(null, v.mois.map(function (m) { return m.ca; })) || 1;
+      var af = t.aFaire || { retraits: [], dons: [], messages: [], locations: [] };
+      var blocAF = function (titre, items, rendu, vide, cible) {
+        return '<div class="bloc-afaire"><div class="tete-af"><h3>' + titre + ' <em>' + items.length + '</em></h3>' + (cible ? '<button class="lien" data-aller="' + cible + '">Tout voir</button>' : '') + '</div>' +
+          (items.length ? items.map(rendu).join('') : '<p class="meta">' + vide + '</p>') + '</div>';
+      };
+      zone.innerHTML =
+        '<p class="meta">Mis à jour à ' + heure(t.calculeLe) + ' <button class="lien" id="maj-tdb">Actualiser</button></p>' +
+        section('À faire',
+          blocAF('Retraits d\'aujourd\'hui et de demain', af.retraits, function (r) {
+            return '<button class="ligne-af" data-aller="eq-retraits"><span class="vignette">' + imgPhoto(r.photo, '', 200) + '</span><span><b>' + esc(r.titre) + '</b><span>' + esc(r.prenom) + ' · ' + esc(r.code) +
+              (r.point ? ' · ' + esc(r.point) : '') + '</span><span>' + (r.creneau ? 'Passe ' + esc(r.creneau) : 'Dernier jour : ' + esc(dateLongue(r.limite))) + (r.emplacement ? ' · ' + esc(r.emplacement) : '') + '</span></span></button>';
+          }, 'Aucun retrait prévu.', 'eq-retraits') +
+          blocAF('Propositions de dons', af.dons, function (d) {
+            return '<div class="ligne-af">' + (d.photos[0] ? '<button class="vignette" data-agrandir-don>' + imgPhoto(d.photos[0], 'Photo du don', 800) + '</button>' : '<span class="vignette"></span>') +
+              '<button class="texte-af" data-aller="dons"><b>' + esc(d.description.slice(0, 70)) + '</b><span>' + esc(d.prenom) + ' · ' + esc(dateLongue(d.date)) + '</span><span>' + esc(d.mode) + '</span></button></div>';
+          }, 'Aucun don en attente.', 'dons') +
+          blocAF('Messages non lus', af.messages, function (m) {
+            return '<button class="ligne-af" data-conv-af="' + esc(m.id) + '"><span><b>' + esc(m.prenom) + ' · ' + esc(m.article) + '</b><span>' + esc(m.dernier.slice(0, 90)) + '</span></span></button>';
+          }, 'Aucun message en attente.', 'eq-messages') +
+          (lo.actif ? blocAF('Locations du jour', af.locations, function (l) {
+            return '<button class="ligne-af" data-aller="eq-locations"><span><b>' + esc(l.nom) + '</b><span>' + esc(l.prenom) + ' · ' + esc(l.code) + ' · ' + esc(l.statut) + '</span><span>Du ' + esc(dateLongue(l.debut)) + ' au ' + esc(dateLongue(l.fin)) + '</span></span></button>';
+          }, 'Rien de prévu.', 'eq-locations') : '')) +
+        section('En chiffres aujourd\'hui',
+          '<div class="tuiles">' + tuile(somme(a.retraitsAujourdhui), 'retraits prévus aujourd\'hui', 'eq-retraits') + tuile(somme(a.retraitsDemain), 'retraits prévus demain', 'eq-retraits') +
+          tuile(a.reservationsEnCours, 'réservations en cours (' + a.sansCreneau + ' sans jour choisi)', 'eq-retraits') + tuile(a.finissentAujourdhui, 'réservations qui expirent ce soir', 'eq-retraits', a.finissentAujourdhui > 0) +
+          (lo.actif ? tuile(a.locationsARemettre, 'locations à remettre (aujourd\'hui, demain)', 'eq-locations') + tuile(a.locationsARecuperer, 'outils à récupérer', 'eq-locations') + tuile(a.retards, 'locations en retard', 'eq-locations', a.retards > 0) : '') +
+          tuile(a.messagesNonLus, 'messages non lus', 'eq-messages', a.messagesNonLus > 0) + tuile(a.donsATraiter, 'dons à traiter', 'dons', a.donsATraiter > 0) +
+          (a.messagesSignales ? tuile(a.messagesSignales, 'messages signalés à vérifier', null, true) : '') + '</div>' +
+          (somme(a.retraitsAujourdhui) ? '<p class="meta">Aujourd\'hui par point : ' + a.retraitsAujourdhui.map(function (x) { return esc(x.nom) + ' (' + x.nb + ')'; }).join(', ') + '</p>' : '')) +
+        section('Ventes',
+          '<div class="tuiles">' + tuile(nb(v.j7.ventes), 'vendus en 7 jours') + tuile(prix(v.j7.ca), 'encaissés en 7 jours') + tuile(nb(v.j30.ventes), 'vendus en 30 jours') + tuile(prix(v.j30.ca), 'encaissés en 30 jours') +
+          tuile(prix(v.j30.panier), 'prix moyen d\'un article') + tuile(v.tauxRetrait == null ? '—' : v.tauxRetrait + ' %', 'des réservations retirées (90 jours)', null, v.tauxRetrait != null && v.tauxRetrait < 70) +
+          tuile(nb(v.depuisDebut.ventes), 'articles vendus depuis le début') + tuile(prix(v.depuisDebut.ca), 'encaissés depuis le début') + '</div>' +
+          '<h3 class="sous-section">Chiffre d\'affaires des 12 derniers mois</h3><div class="histo">' + v.mois.map(function (m) {
+            return '<div><i style="height:' + Math.max(2, Math.round(m.ca / maxCa * 100)) + '%" title="' + esc(prix(m.ca)) + '"></i><span>' + MOIS[Number(m.mois.slice(5)) - 1].slice(0, 3) + '</span></div>'; }).join('') + '</div>' +
+          '<h3 class="sous-section">Ventes du mois par catégorie</h3>' + barres(v.parCategorie) +
+          '<h3 class="sous-section">Ventes du mois par point de retrait</h3>' + barres(v.parPoint)) +
+        section('Stock',
+          '<div class="tuiles">' + tuile(st.enVente, 'articles en vente', 'eq-stock') + tuile(prix(st.valeur), 'valeur du stock en ligne') + tuile(st.reserves, 'réservés en attente de retrait') + tuile(st.nbAnciens, 'en ligne depuis plus de 30 jours', 'eq-stock', st.nbAnciens > 0) + '</div>' +
+          '<h3 class="sous-section">En vente par catégorie</h3>' + barres(st.parCategorie) +
+          (st.anciens.length ? '<h3 class="sous-section">Ne trouvent pas preneur (à baisser ou mettre à la une)</h3>' + st.anciens.map(function (x) {
+            return '<div class="ligne-article">' + '<div class="vignette">' + imgPhoto(x.photo, '', 200) + '</div><div><h3>' + esc(x.titre) + '</h3><p>' + prix(x.prix) + ', en ligne depuis ' + x.jours + ' jours</p></div></div>'; }).join('') : '') +
+          (st.vitesse.length ? '<h3 class="sous-section">Ce qui part le plus vite (jours entre la mise en ligne et la vente)</h3>' + barres(st.vitesse.map(function (x) { return { nom: x.nom, nb: x.jours }; }), ' j') : '')) +
+        (lo.actif ? section('Location',
+          '<div class="tuiles">' + tuile(lo.locations30, 'locations en 30 jours', 'eq-locations') + tuile(prix(lo.ca30), 'de locations en 30 jours') + tuile(lo.occupation == null ? '—' : lo.occupation + ' %', 'taux d\'occupation du matériel') +
+          tuile(lo.outils, 'outils proposés') + tuile(lo.enReparation, 'en réparation', null, lo.enReparation > 0) + tuile(lo.reservees, 'locations à venir', 'eq-locations') + '</div>' +
+          '<h3 class="sous-section">Outils les plus loués</h3>' + barres(lo.top)) : '') +
+        section('Clients',
+          '<div class="tuiles">' + tuile(nb(cl.total), 'clients inscrits') + tuile(nb(cl.nouveaux30), 'nouveaux en 30 jours') + tuile(nb(cl.actifs30), 'venus sur l\'app en 30 jours') + tuile(nb(cl.acheteurs), 'ont déjà acheté') + '</div>' +
+          '<h3 class="sous-section">Par commune</h3>' + barres(cl.parCommune) + '<h3 class="sous-section">Par âge</h3>' + barres(cl.parAge) + '<h3 class="sous-section">Comment ils nous ont connus</h3>' + barres(cl.parConnu)) +
+        section('Ce que les gens cherchent',
+          '<div class="tuiles">' + tuile(nb(d.favorisTotal), 'articles mis en favori') + tuile(nb(d.alertesActives), 'alertes actives') + tuile(nb(d.nbJamaisServies), 'alertes jamais servies', null, d.nbJamaisServies > 0) + tuile(d.budgetMoyen == null ? '—' : prix(d.budgetMoyen), 'budget max moyen des alertes') + '</div>' +
+          '<h3 class="sous-section">Recherches sans résultat (30 jours) : à collecter en priorité</h3>' + puces(d.recherchesSansResultat, 'Aucune pour le moment.') +
+          '<h3 class="sous-section">Alertes jamais servies</h3>' + (d.jamaisServies.length ? '<ul class="liste-simple">' + d.jamaisServies.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<p class="meta">Toutes les alertes ont déjà trouvé au moins un article.</p>') +
+          '<h3 class="sous-section">Mots des alertes</h3>' + puces(d.motsAlertes, 'Pas encore d\'alertes.') +
+          '<h3 class="sous-section">Alertes par catégorie</h3>' + barres(d.alertesParCategorie) +
+          (d.taillesDemandees.length ? '<h3 class="sous-section">Tailles demandées</h3>' + barres(d.taillesDemandees) : '') +
+          '<h3 class="sous-section">Les plus mis en favori (encore en vente)</h3>' + (d.topFavoris.length ? d.topFavoris.map(function (x) {
+            return '<div class="ligne-article"><div class="vignette">' + imgPhoto(x.photo, '', 200) + '</div><div><h3>' + esc(x.titre) + '</h3><p>' + prix(x.prix) + ', ' + x.nb + ' personne' + (x.nb > 1 ? 's' : '') + ' l\'ont en favori</p></div></div>'; }).join('') : '<p class="meta">Pas encore de favoris.</p>') +
+          '<h3 class="sous-section">Favoris par catégorie</h3>' + barres(d.favorisParCategorie) +
+          (d.attenteTop.length ? '<h3 class="sous-section">Listes d\'attente les plus longues</h3>' + barres(d.attenteTop.map(function (x) { return { nom: x.titre, nb: x.nb }; })) : '') +
+          '<h3 class="sous-section">Recherches les plus fréquentes (30 jours)</h3>' + puces(d.recherchesTop, 'Pas encore de recherches.')) +
+        section('Impact',
+          '<div class="tuiles">' + tuile(nb(im.kgMois) + ' kg', 'réemployés ce mois-ci') + tuile(nb(im.co2Mois) + ' kg', 'de CO₂ évités ce mois-ci') + tuile(nb(im.kgTotal) + ' kg', 'réemployés depuis le début') + tuile(nb(im.co2Total) + ' kg', 'de CO₂ évités depuis le début') +
+          tuile(im.dons.proposes, 'dons proposés en 30 jours', 'dons') + tuile(im.dons.acceptes, 'dons acceptés en 30 jours') + '</div>', 'Le détail par client reste dans le Google Sheet ; ici, uniquement des chiffres globaux.');
+      document.getElementById('maj-tdb').onclick = function () { delete memoire['equipeTableau{}']; equipeTableau(zone, true); };
+      zone.onclick = function (e) {
+        var ag = e.target.closest('[data-agrandir-don]'); if (ag) { var im = ag.querySelector('img'); if (im) ouvrirImage(im.src); return; }
+        var cv = e.target.closest('[data-conv-af]'); if (cv) { ouvrirOnglet('eq-messages'); aller('conversation', { id: cv.dataset.convAf, equipe: true }); return; }
+        var b = e.target.closest('[data-aller]'); if (!b) return;
+        var cible = b.dataset.aller;
+        if (cible.indexOf('eq-') === 0) ouvrirOnglet(cible); else { etat.equipeVue = cible; vues.equipe(); }
+      };
+    };
+    (rafraichir ? { then: function (f) { api('equipeTableau', { rafraichir: true }).then(f).catch(erreur); return { catch: function () {} }; } } : avecMemoire('equipeTableau')).then(dessiner).catch(erreur);
+  }
+
+  // ================= Profil (qui sont nos clients) et conditions d'utilisation =================
+  function champsProfil(u) {
+    var pr = cfg().profil || {};
+    var sel = function (nom, label, opts, val, aide) {
+      return '<label class="champ">' + label + (aide ? ' <small>' + aide + '</small>' : '') + '<select name="' + nom + '"><option value="">Choisir</option>' +
+        (opts || []).map(function (o) { return '<option' + (o === val ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></label>';
+    };
+    return sel('age', 'Votre tranche d\'âge', pr.ages, u.age) + sel('commune', 'Votre commune', pr.communes, u.commune) +
+      sel('connu', 'Comment nous avez-vous connus ?', pr.connu, u.connu, '(facultatif)');
+  }
+  /** Comptes créés avant les conditions d'utilisation : on les fait accepter une fois. */
+  function verifierProfil() {
+    var u = etat.utilisateur;
+    if (!u || u.role || u.conditionsOk !== false) return;
+    setTimeout(function () { aller('profil', { obligatoire: true }); }, 300);
+  }
+  vues.profil = function (p) {
+    var u = etat.utilisateur || {};
+    $vue.innerHTML = (p.obligatoire ? '' : boutonRetour()) + '<h1 class="titre-page">' + (p.obligatoire ? 'Nos conditions évoluent' : 'Mon profil') + '</h1>' +
+      '<p class="sous-titre">' + (p.obligatoire ? 'Merci d\'accepter les conditions d\'utilisation pour continuer. Vous pouvez aussi nous dire qui vous êtes : ça nous aide à mieux vous servir (statistiques anonymes).' : 'Ces informations restent anonymes dans nos statistiques.') + '</p>' +
+      '<form class="pile" id="fp">' + champsProfil(u) +
+      (u.conditionsOk ? '' : '<label class="case"><input type="checkbox" name="accepte" required><span>J\'accepte les <a href="#" id="lien-cgu2">conditions d\'utilisation</a> et la <a href="#" id="lien-conf2">politique de confidentialité</a>.</span></label>') +
+      '<button class="bouton">Enregistrer</button></form>';
+    var l1 = document.getElementById('lien-cgu2'); if (l1) l1.onclick = function (e) { e.preventDefault(); ouvrirLien(cfg().urlConditions); };
+    var l2 = document.getElementById('lien-conf2'); if (l2) l2.onclick = function (e) { e.preventDefault(); ouvrirLien(cfg().urlConfidentialite); };
+    document.getElementById('fp').onsubmit = function (e) {
+      e.preventDefault();
+      var d = Object.fromEntries(new FormData(e.target)), btn = e.target.querySelector('.bouton');
+      chargement(btn, true);
+      api('completerProfil', { profil: { age: d.age, commune: d.commune, connu: d.connu }, accepte: !!d.accepte || !!u.conditionsOk }).then(function (u2) {
+        etat.utilisateur = Object.assign(etat.utilisateur || {}, u2); toast('Merci !');
+        if (p.obligatoire) ouvrirOnglet(accueil()); else retour();
+      }).catch(function (err) { chargement(btn, false); erreur(err); });
+    };
+  };
+
+  // ================= Espace équipe : « Plus » et stock =================
+  function equipePlus(zone) {
+    var items = [
+      ['ajouter', ICONES.photo, 'Mettre un article en ligne'],
+      ['materiel', ICONES.outil, 'Matériel en location'],
+      ['dons', ICONES.feuille, 'Propositions de dons'],
+      ['animer', ICONES.etoile, 'Animations, soldes et pop-up'],
+      ['reglages', ICONES.reglages, 'Réglages et points de retrait'],
+      ['suivi', ICONES.feuille, 'Tableau de suivi (Google Sheet)'],
+      ['bug', ICONES.bulle, 'Signaler un bug ou une idée'],
+      ['client', ICONES.coeur, 'Voir l\'app comme un client'],
+      ['deco', ICONES.retour, 'Se déconnecter']
+    ].filter(function (x) { return x[0] !== 'materiel' || (cfg().location && cfg().location.active); }).filter(function (x) { return x[0] !== 'suivi' || etat.utilisateur.urlSuivi; });
+    zone.innerHTML = '<p class="sous-titre">Connecté avec ' + esc(etat.utilisateur.email) + '</p><nav class="menu">' + items.map(function (x) {
+      return '<button data-plus="' + x[0] + '">' + x[1] + '<span>' + esc(x[2]) + '</span>' + ICONES.chevron + '</button>';
+    }).join('') + '</nav>';
+    zone.querySelector('.menu').onclick = function (e) {
+      var b = e.target.closest('[data-plus]'); if (!b) return;
+      var k = b.dataset.plus;
+      if (k === 'suivi') return ouvrirLien(etat.utilisateur.urlSuivi);
+      if (k === 'bug') return aller('retour');
+      if (k === 'client') { etat.modeClient = true; ouvrirOnglet('catalogue'); toast('Vous voyez l\'app comme un client. Le bouton « Espace équipe » vous ramène.'); return; }
+      if (k === 'deco') {
+        return modale('Se déconnecter ?', '', [{ texte: 'Se déconnecter', valeur: true }, { texte: 'Annuler', valeur: false, style: 'second' }]).then(function (ok) {
+          if (ok) { Push.oublier(); api('deconnexion').catch(function () {}); deconnecterLocalement(); ouvrirOnglet('catalogue'); }
+        });
+      }
+      etat.equipeVue = k; vues.equipe();
+    };
+  }
+  function equipeStockOnglets(zone) {
+    var loc = cfg().location && cfg().location.active, v = etat.stockVue || 'articles';
+    zone.innerHTML = (loc ? '<div class="segments"><button data-sv="articles" aria-pressed="' + (v === 'articles') + '">Articles en vente</button><button data-sv="materiel" aria-pressed="' + (v === 'materiel') + '">Matériel à louer</button></div>' : '') +
+      '<button class="bouton" id="ajout-stock">' + (v === 'materiel' ? 'Ajouter un outil' : 'Mettre un article en ligne') + '</button><div id="stock-liste" style="margin-top:12px"></div>';
+    var seg = zone.querySelector('.segments');
+    if (seg) seg.onclick = function (e) { var b = e.target.closest('[data-sv]'); if (b) { etat.stockVue = b.dataset.sv; equipeStockOnglets(zone); } };
+    document.getElementById('ajout-stock').onclick = function () { if (v === 'materiel') aller('ajoutOutil', {}); else { etat.equipeVue = 'ajouter'; vues.equipe(); } };
+    (v === 'materiel' ? equipeMaterielUI : equipeStock)(document.getElementById('stock-liste'), true);
+  }
+  vues.editerArticle = function (p) {
+    var a = p.article;
+    var b = { photos: (a.photos || []).slice(), titre: a.titre, categorie: a.categorie, sousCategorie: a.sousCategorie, typeCO2: a.typeCO2, prix: a.prixInitial || a.prix,
+      prixSolde: a.prixSolde, taille: a.taille, etat: a.etat, description: a.description, caracteristiques: a.caracteristiques,
+      marque: a.specs && a.specs.marque, matiere: a.specs && a.specs.matiere, largeur: a.specs && a.specs.largeur, profondeur: a.specs && a.specs.profondeur, hauteur: a.specs && a.specs.hauteur,
+      teste: a.specs && a.specs.teste, etiquette: a.etiquette, provenance: a.provenance, preparePar: a.preparePar, poids: a.poidsSaisi, emplacement: a.emplacement,
+      aLaUne: a.aLaUne, volumineux: a.volumineuxCoche };
+    $vue.innerHTML = boutonRetour() + '<h1 class="titre-page">Modifier l\'article</h1><div id="eq-form"></div>';
+    equipeAjouter(document.getElementById('eq-form'), b, a.id);
+  };
+
+  // ================= Pop-up d'animation (une fois par jour) =================
+  function popupAnimation() {
+    var bs = ((cfg().animation || {}).bandeaux || []).filter(function (b) { return b.popup; });
+    if (!bs.length || modeEquipe()) return;
+    var b = bs[0], cle = 'popup_' + b.id + '_' + iso(new Date());
+    stockage.get(cle).then(function (deja) {
+      if (deja) return;
+      stockage.set(cle, '1');
+      var texte = (b.remise ? '<b class="remise-popup">−' + b.remise + ' %</b> ' : '') + esc(b.texte || '');
+      modale(b.titre, texte, [{ texte: b.bouton || 'Voir les articles', valeur: 'go' }, { texte: 'Plus tard', valeur: null, style: 'second' }]).then(function (v) {
+        if (v !== 'go') return;
+        var lien = b.lien || {};
+        etat.categorie = ''; etat.recherche = ''; etat.filtre = null;
+        if (lien.type === 'categorie') etat.categorie = lien.valeur;
+        else if (lien.type === 'recherche') etat.recherche = lien.valeur;
+        else if (lien.type === 'une') etat.filtre = { type: 'une', libelle: 'À la une' };
+        else if (lien.type === 'etiquette') etat.filtre = { type: 'etiquette', valeur: lien.valeur, libelle: lien.valeur };
+        if (sansAccents(b.remiseSur || '') === 'location') return ouvrirOnglet('louer');
+        ouvrirOnglet('catalogue');
+      });
+    });
+  }
+
+  // ================= Version web installable (écran d'accueil) =================
+  var invitationInstall = null;
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); invitationInstall = e; });
+  function estInstallee() { return NATIF || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone; }
+  function bandeauInstallation() {
+    if (estInstallee()) return '';
+    var ios = /iPhone|iPad|iPod/.test(navigator.userAgent), mobile = /Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (!mobile) return '';
+    return '<button class="carte-install" id="installer">' + ICONES.partage + '<span><b>Installer l\'app sur votre téléphone</b>' +
+      (ios ? 'Touchez Partager puis « Sur l\'écran d\'accueil ».' : 'Un geste, et elle s\'ouvre comme une vraie app.') + '</span></button>';
+  }
+  function brancherInstallation() {
+    var b = document.getElementById('installer'); if (!b) return;
+    b.onclick = function () {
+      if (invitationInstall) { invitationInstall.prompt(); invitationInstall = null; return; }
+      modale('Installer l\'app', 'Sur iPhone : touchez le bouton <b>Partager</b> (le carré avec une flèche, en bas de Safari), puis <b>Sur l\'écran d\'accueil</b>, puis <b>Ajouter</b>.<br><br>Sur Android : menu <b>⋮</b> de Chrome, puis <b>Installer l\'application</b> ou <b>Ajouter à l\'écran d\'accueil</b>.', [{ texte: 'Compris', valeur: true }]);
+    };
+  }
 
   // ================= Démarrage =================
   /** Un seul appel au moteur : configuration, compte, alertes, listes d'attente et messages non lus. */
@@ -2168,6 +2603,8 @@
       etat.utilisateur = d.moi; etat.moiLe = Date.now();
       etat.alertes = d.alertes || []; etat.mesAttentes = d.attentes || [];
       etat.nonLus = d.nonLus || 0; etat.nonLusEquipe = d.nonLusEquipe || 0;
+      fusionnerFavoris(d.favoris);
+      stockage.set('utilisateur', JSON.stringify(d.moi));
       majPastille();
     }
   }
@@ -2179,24 +2616,43 @@
   }
   function demarrer() {
     Push.brancher();
-    Promise.all([stockage.get('jeton'), stockage.get('favoris'), stockage.get('catalogue'), stockage.get('config'), stockage.get('memo_resa')]).then(function (r) {
+    var copieSite = NATIF ? Promise.resolve(null) : fetch('donnees/site.json', { cache: 'no-cache' }).then(function (x) { return x.ok ? x.json() : null; }).catch(function () { return null; });
+    Promise.all([stockage.get('jeton'), stockage.get('favoris'), stockage.get('catalogue'), stockage.get('config'), stockage.get('memo_resa'), stockage.get('utilisateur'), copieSite]).then(function (r) {
       try { if (r[4] && r[0]) memoire['mesReservations{}'] = JSON.parse(r[4]); } catch (e) {}
+      try { if (r[5] && r[0]) etat.utilisateur = JSON.parse(r[5]); } catch (e) {}
       etat.jeton = r[0] || '';
       try { etat.favoris = JSON.parse(r[1] || '[]'); } catch (e) { etat.favoris = []; }
       // Affichage immédiat du dernier catalogue connu, mis à jour juste après en arrière-plan.
       try { if (r[2]) { var cat = JSON.parse(r[2]); if (Array.isArray(cat)) etat.articles = cat; else { etat.articles = cat.articles; etat.versionCatalogue = cat.version; } } } catch (e) {}
       try { if (r[3]) { etat.config = JSON.parse(r[3]); appliquerTheme(etat.config.animation && etat.config.animation.theme); } } catch (e) {}
-      return api('demarrage').then(function (d) {
+      // Copie publiée sur le site (quelques secondes de retard au plus) : affichage immédiat, sans attendre le moteur.
+      var site = r[6];
+      if (site && site.config && site.catalogue) {
+        etat.config = site.config; appliquerTheme(site.config.animation && site.config.animation.theme);
+        etat.articles = site.catalogue.articles; etat.versionCatalogue = site.catalogue.version;
+        if (site.materiel) { etat.outils = site.materiel; memoire['materiel{}'] = site.materiel; }
+      }
+      var suite = api('demarrage').then(function (d) {
+        var modeAvant = modeEquipe();
         appliquerDemarrage(d);
         if (d.config) stockage.set('config', JSON.stringify(d.config));
         if (etat.jeton && !d.moi) deconnecterLocalement();
         if (etat.jeton) { if (MODE_DEMO) stockage.get('pushDemo').then(function (v) { etat.pushActif = !!v; }); else Push.activer(false); }
-      }).catch(function () { if (!etat.config) etat.config = null; });
-    }).then(function () {
-      ouvrirOnglet(etat.utilisateur && etat.utilisateur.role ? 'equipe' : 'catalogue');
+        return modeAvant !== modeEquipe();
+      }).catch(function () { if (!etat.config) etat.config = null; return false; });
+      // Si on a déjà de quoi afficher, on n'attend pas le moteur.
+      return etat.config ? { suite: suite } : suite.then(function () { return {}; });
+    }).then(function (o) {
+      ouvrirOnglet(accueil());
       if (Plugins.SplashScreen) Plugins.SplashScreen.hide();
-      if (etat.articles) chargerArticles().then(redessinerSiCatalogue).catch(function () {});
-      setTimeout(precharger, 1500);
+      var apres = function (modeChange) {
+        if (modeChange) ouvrirOnglet(accueil()); else { majPastille(); var c0 = etat.pile[etat.pile.length - 1]; if (c0 && c0.nom === 'catalogue') vues.catalogue(); }
+        verifierProfil();
+        if (etat.articles) chargerArticles().then(redessinerSiCatalogue).catch(function () {});
+        setTimeout(precharger, 1500);
+        ouvrirDepuisLien();
+      };
+      if (o && o.suite) o.suite.then(apres); else apres(false);
     });
     if (Plugins.App) Plugins.App.addListener('appStateChange', function (s) {
       if (!s.isActive) return;
@@ -2205,6 +2661,15 @@
         if (c && (c.nom === 'catalogue' || c.nom === 'reservations')) vues[c.nom]();
       });
     });
+  }
+  /** Notification touchée dans la version web : le site s'ouvre avec ?ouvrir=… */
+  function ouvrirDepuisLien() {
+    var ar = /[?&]article=([^&]+)/.exec(location.search || '');
+    if (ar) { try { history.replaceState(null, '', location.pathname); } catch (e) {} if (!modeEquipe()) voirArticle(decodeURIComponent(ar[1])); return; }
+    var m = /[?&]ouvrir=([^&]+)/.exec(location.search || '');
+    if (!m) return;
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    try { Push.ouvrir(JSON.parse(decodeURIComponent(m[1]))); } catch (e) {}
   }
   function redessinerSiCatalogue() { var c = etat.pile[etat.pile.length - 1]; if (c && c.nom === 'catalogue' && document.getElementById('liste')) dessinerListe(); }
   demarrer();

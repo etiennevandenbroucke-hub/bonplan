@@ -541,3 +541,100 @@ button.impact-carte { display: block; width: 100%; text-align: left; border: 0; 
 details.historique { margin-top: 10px; } details.historique summary { cursor: pointer; font-weight: 600; color: var(--vert); padding: 8px 0; }
 #onglets button { font-size: 11px; }
 .carte.outil .voile { top: 8px; bottom: auto; }
+
+/* =========================================================
+   v6 : espace équipe dédié, points de retrait, soldes, pop-up, web installable, ordinateur
+   ========================================================= */
+.tete-equipe p { margin: 12px 0 0; font-size: 13px; font-weight: 700; color: var(--vert); text-transform: uppercase; letter-spacing: .06em; }
+.tete-equipe .titre-page { margin-top: 2px; }
+#retour-equipe { position: fixed; z-index: 40; right: 12px; top: calc(var(--haut) + 10px); border: 0; border-radius: 999px; padding: 8px 14px; background: var(--encre); color: var(--fond); font-weight: 700; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.2); cursor: pointer; }
+#retour-equipe[hidden] { display: none; }
+
+.points-retrait { display: grid; gap: 8px; }
+.point-retrait { display: block; text-align: left; border: 2px solid var(--trait); background: var(--surface); border-radius: var(--rayon); padding: 12px 14px; cursor: pointer; }
+.point-retrait b { display: block; font-size: 16px; }
+.point-retrait span { display: block; font-size: 14px; color: var(--encre-douce); }
+.point-retrait[aria-pressed="true"] { border-color: var(--vert); background: var(--vert-pale); }
+
+.prix.solde { background: #E0465E; color: #fff; }
+.prix.solde s { font-weight: 600; font-size: .7em; opacity: .85; margin-right: 2px; }
+.badge-remise { position: absolute; left: 8px; bottom: 10px; background: #E0465E; color: #fff; font-weight: 800; font-size: 13px; padding: 4px 8px; border-radius: 8px; }
+.badge-remise.grand { left: 14px; bottom: 14px; font-size: 16px; }
+.carte.indispo .badge-remise { display: none; }
+
+.bandeau.avec-image { color: #fff; }
+.bandeau-fond { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.bandeau.avec-image::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,.65), rgba(0,0,0,.15)); z-index: 0; }
+.bandeau.avec-image .bandeau-texte { z-index: 1; }
+.bandeau-remise { position: absolute; z-index: 1; top: 14px; right: 14px; background: var(--sticker); color: #17241F; font-weight: 800; font-size: 22px; padding: 8px 12px; border-radius: 12px; rotate: 6deg; box-shadow: 0 2px 0 rgba(0,0,0,.3); }
+.remise-popup { display: inline-block; background: #E0465E; color: #fff; padding: 2px 8px; border-radius: 8px; margin-right: 4px; }
+
+.carte-install { display: flex; align-items: center; gap: 14px; width: 100%; margin-top: 16px; padding: 16px; border-radius: 18px; border: 0; background: var(--vert); color: var(--vert-texte); text-align: left; cursor: pointer; }
+.carte-install svg { width: 28px; height: 28px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; }
+.carte-install b { display: block; font-size: 16px; }
+.carte-install span { font-size: 14px; opacity: .9; }
+.point-edit legend { font-weight: 700; }
+
+/* Ordinateur : contenu plus large et barre de navigation en haut */
+@media (min-width: 900px) {
+  #vue { max-width: 1100px; padding: calc(var(--haut) + 84px) 32px 48px; }
+  .grille { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px 18px; }
+  #onglets { top: 0; bottom: auto; justify-content: center; gap: 4px; padding: 8px 16px; border-top: 0; border-bottom: 1px solid var(--trait); }
+  #onglets button { flex: none; max-width: none; flex-direction: row; gap: 8px; padding: 10px 16px; border-radius: 999px; font-size: 14px; }
+  #onglets button[aria-current="page"] { background: var(--vert-pale); }
+  #onglets svg { width: 20px; height: 20px; }
+  #onglets button.pastille::after { top: 6px; left: 26px; }
+  body:has(.barre-action) #onglets { display: flex; }
+  .barre-action { left: 50%; right: auto; width: min(760px, 100%); translate: -50% 0; border: 1px solid var(--trait); border-bottom: 0; border-radius: 18px 18px 0 0; }
+  .fiche, .galerie { max-width: 760px; margin-left: auto; margin-right: auto; }
+  .galerie { margin-top: 8px; }
+  .defile-h .carte { width: 220px; }
+  #toast { top: auto; bottom: 24px; }
+  #retour-equipe { top: 70px; }
+  .bandeau h2 { font-size: 32px; max-width: 22ch; }
+}
+@media (min-width: 1200px) { .grille { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (min-width: 900px) { .galerie .defile > div { aspect-ratio: auto; height: 440px; } .galerie img { object-fit: contain; background: var(--surface); } }
+
+/* v6.1 : tableau de bord équipe */
+.bloc-tdb { margin-top: 8px; }
+.tuiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.tuile { text-align: left; border: 1px solid var(--trait); background: var(--surface); border-radius: 14px; padding: 12px; cursor: default; font: inherit; color: inherit; }
+.tuile[data-aller] { cursor: pointer; }
+.tuile b { display: block; font-size: 24px; font-weight: 800; line-height: 1.1; }
+.tuile span { display: block; font-size: 13px; color: var(--encre-douce); margin-top: 4px; line-height: 1.3; }
+.tuile.alerte { border-color: #E0465E; background: rgba(224,70,94,.08); }
+.tuile.alerte b { color: #C2304A; }
+.sous-section { font-size: 15px; margin: 18px 0 8px; }
+.barres { display: grid; gap: 6px; }
+.barre { display: grid; grid-template-columns: minmax(90px, 38%) 1fr auto; gap: 8px; align-items: center; font-size: 14px; }
+.barre .lib { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barre .jauge { height: 10px; background: var(--trait); border-radius: 6px; overflow: hidden; }
+.barre .jauge i { display: block; height: 100%; background: var(--vert); border-radius: 6px; }
+.barre .val { font-weight: 700; min-width: 2.5em; text-align: right; }
+.histo { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; height: 120px; align-items: end; }
+.histo div { display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
+.histo i { display: block; width: 100%; background: var(--vert); border-radius: 4px 4px 0 0; }
+.histo span { font-size: 10px; color: var(--encre-douce); margin-top: 4px; }
+.puce.statique { cursor: default; }
+.puce.statique em { font-style: normal; font-weight: 800; color: var(--vert); margin-left: 2px; }
+.liste-simple { margin: 0; padding-left: 20px; font-size: 14px; }
+.liste-simple li { margin: 4px 0; }
+@media (min-width: 900px) { .tuiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* v6.2 */
+.vers-produit { padding: 0; border: 0; background: none; cursor: pointer; }
+.lien-titre { padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: var(--trait); text-underline-offset: 3px; }
+.photos-don { display: flex; gap: 6px; margin: 6px 0; }
+.photos-don button { width: 84px; height: 84px; padding: 0; border: 0; border-radius: 10px; overflow: hidden; cursor: zoom-in; }
+.photos-don img { width: 100%; height: 100%; object-fit: cover; }
+.bloc-afaire { background: var(--surface); border: 1px solid var(--trait); border-radius: var(--rayon); padding: 10px 12px; margin-bottom: 10px; }
+.tete-af { display: flex; justify-content: space-between; align-items: baseline; }
+.tete-af h3 { margin: 0 0 6px; font-size: 15px; }
+.tete-af h3 em { font-style: normal; background: var(--vert); color: var(--vert-texte); border-radius: 999px; padding: 1px 8px; font-size: 12px; margin-left: 4px; }
+.ligne-af { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; padding: 8px 0; border: 0; border-top: 1px solid var(--trait); background: none; font: inherit; color: inherit; cursor: pointer; }
+.ligne-af .vignette { width: 48px; height: 48px; flex: none; border-radius: 10px; overflow: hidden; padding: 0; border: 0; background: var(--trait); }
+.ligne-af .vignette img { width: 100%; height: 100%; object-fit: cover; }
+.ligne-af b, .texte-af b { display: block; font-size: 15px; }
+.ligne-af span span, .texte-af span { display: block; font-size: 13px; color: var(--encre-douce); }
+.texte-af { flex: 1; text-align: left; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }

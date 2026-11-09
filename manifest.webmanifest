@@ -1,0 +1,17 @@
+{
+  "name": "Bailleul Super Bon Plan",
+  "short_name": "Bon Plan",
+  "description": "Seconde main et location de matériel à Bailleul : réservez en ligne, retirez près de chez vous.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1F5C45",
+  "theme_color": "#1F5C45",
+  "icons": [
+    { "src": "icones/icone-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icones/icone-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icones/icone-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

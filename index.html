@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <meta name="format-detection" content="telephone=no">
+  <meta name="theme-color" content="#1F5C45">
+  <meta name="description" content="Vêtements, objets, meubles de seconde main et location de matériel à Bailleul : réservez en ligne, retirez près de chez vous.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icones/icone-192.png">
+  <link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Bon Plan">
   <title>Bailleul Super Bon Plan</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -36,7 +44,32 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
       <span>Compte</span>
     </button>
+    <button data-onglet="eq-accueil" aria-label="Tableau de bord" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>Accueil</span>
+    </button>
+    <button data-onglet="eq-retraits" aria-label="Retraits" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V5a2 2 0 0 1 2-2h7a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.8z"/><circle cx="8" cy="8" r="1.6"/></svg>
+      <span>Retraits</span>
+    </button>
+    <button data-onglet="eq-locations" aria-label="Locations" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.6-.6-2.1z"/></svg>
+      <span>Locations</span>
+    </button>
+    <button data-onglet="eq-messages" aria-label="Messages des clients" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>
+      <span>Messages</span>
+    </button>
+    <button data-onglet="eq-stock" aria-label="Stock" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M4 12h16"/></svg>
+      <span>Stock</span>
+    </button>
+    <button data-onglet="eq-plus" aria-label="Plus" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+      <span>Plus</span>
+    </button>
   </nav>
+  <button id="retour-equipe" hidden>Espace équipe</button>
 
   <div id="toast" role="status" hidden></div>
   <div id="modale" hidden></div>
@@ -46,5 +79,11 @@
   <script src="vendor/qrcode.js"></script>
   <script src="demo.js"></script>
   <script src="app.js"></script>
+  <script>
+    // Version web : mise en cache de l'app pour un démarrage instantané (sans effet dans l'app installée via les stores).
+    if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0 && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
+      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+    }
+  </script>
 </body>
 </html>

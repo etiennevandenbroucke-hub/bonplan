@@ -70,11 +70,20 @@
     joursOuverture: ['mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'], creneaux: ['Matin (9h–12h)', 'Après-midi (14h–18h)'],
     categories: ['Vêtements', 'Objets', 'Meubles'], etiquettes: ['Coup de cœur', 'Idée cadeau', 'Petit prix', 'Pièce rare', 'Nouveauté'],
     messageAccueil: 'Des pièces choisies par l\'équipe, à réserver ici et à retirer près de chez vous.',
-    presentation: 'Chaque article est collecté, trié, nettoyé et photographié par les salariés de l\'EBE, une entreprise qui crée des emplois utiles au territoire.',
+    presentation: 'Chaque article est collecté, trié, nettoyé et photographié par les salariés de l\'Entreprise à But d\'Emploi, qui crée des emplois utiles au territoire.',
     maxAlertes: 10, dons: { actifs: true, modes: ['Je l\'apporte au point de collecte', 'Collecte à domicile (gros meubles)'], texte: 'Vêtements propres, objets en état de marche, meubles en bon état. L\'équipe vous répond sous quelques jours.' },
     impact: { articles: 312, kg: 1248, co2: 9870 },
     typesCO2: TYPES, equivalences: { voitureKgParKm: 0.142, empreinteFrancaisKg: 9100, source: 'ADEME, Impact CO2' },
     notificationsPush: false,
+    points: [
+      { nom: 'La Blanche', adresse: '2379 route de la Blanche Maison, 59270 Bailleul', horaires: 'Du mardi au samedi, 9h–12h et 14h–18h', jours: ['mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'], vente: true, volumineux: true, location: true },
+      { nom: 'Au trésor de Melusine', adresse: '29 rue d\'Occident, 59270 Bailleul', horaires: '[horaires à compléter]', jours: [], vente: true, volumineux: false, location: false },
+      { nom: 'Au passage', adresse: 'Gare SNCF, 59270 Bailleul', horaires: '[horaires à compléter]', jours: [], vente: true, volumineux: false, location: false },
+      { nom: 'La repasserie', adresse: '457 petite verte rue, 59270 Bailleul', horaires: '[horaires à compléter]', jours: [], vente: true, volumineux: false, location: false }
+    ],
+    categoriesVolumineuses: ['Meubles'], delaiPreparationJours: 1,
+    profil: { ages: ['Moins de 25 ans', '25 à 39 ans', '40 à 59 ans', '60 ans et plus'], communes: ['Bailleul', 'Méteren', 'Saint-Jans-Cappel', 'Steenwerck', 'Nieppe', 'Autre commune'], connu: ['Bouche-à-oreille', 'En boutique', 'Réseaux sociaux', 'Affiche', 'Autre'] },
+    urlConditions: 'https://example.com',
     location: { active: true, categories: ['Bricolage', 'Jardin', 'Nettoyage', 'Déménagement'], dureeMax: 14, horizon: 60,
       conditions: 'Pièce d\'identité et caution demandées au retrait. Le prix est réglé au retrait, la caution est rendue au retour si le matériel revient en bon état et propre.', caution: 'Chèque ou espèces, rendu au retour' },
     familles: [['canape', 'sofa', 'banquette', 'fauteuil', 'divan', 'clic-clac', 'convertible'], ['chaise', 'tabouret', 'siege', 'assise', 'banc'],
@@ -97,7 +106,7 @@
   };
   var reglages = { message_accueil: config.messageAccueil, point_collecte_nom: config.point.nom, point_collecte_adresse: config.point.adresse, point_collecte_horaires: config.point.horaires,
     telephone_ebe: config.telephone, jours_ouverture: config.joursOuverture.join(', '), creneaux: config.creneaux.join(', '), delai_reponse: config.delaiReponse, presentation_ebe: config.presentation };
-  var utilisateur = { email: 'demo@exemple.fr', prenom: 'Camille', nom: '', telephone: '06 00 00 00 00', role: 'admin', urlSuivi: 'https://docs.google.com/spreadsheets/', bloqueJusqua: 0, tailles: [], messagerieBloquee: false, impact: { articles: 4, kg: 14.8, co2: 244.5 } };
+  var utilisateur = { email: 'demo@exemple.fr', prenom: 'Camille', nom: '', telephone: '06 00 00 00 00', role: 'admin', conditionsOk: true, age: '', commune: '', connu: '', urlSuivi: 'https://docs.google.com/spreadsheets/', bloqueJusqua: 0, tailles: [], messagerieBloquee: false, impact: { articles: 4, kg: 14.8, co2: 244.5 } };
 
   function cle(t) { return t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-'); }
   function animationDuJour() {
@@ -107,7 +116,7 @@
       theme: cle((act[0] && act[0].theme) || 'Classique'),
       bandeaux: act.filter(function (n) { return n.titre; }).map(function (n) {
         var l = n.lien === 'À la une' ? { type: 'une' } : config.categories.indexOf(n.lien) >= 0 ? { type: 'categorie', valeur: n.lien } : config.etiquettes.indexOf(n.lien) >= 0 ? { type: 'etiquette', valeur: n.lien } : n.lien ? { type: 'recherche', valeur: n.lien } : null;
-        return { id: n.id, theme: cle(n.theme), titre: n.titre, texte: n.texte, bouton: n.bouton, lien: l, image: n.image };
+        return { id: n.id, theme: cle(n.theme), titre: n.titre, texte: n.texte, bouton: n.bouton, lien: l, image: n.imageData || n.image, remise: Number(n.remise) || 0, remiseSur: n.remiseSur || '', popup: !!n.popup };
       })
     };
   }
@@ -144,7 +153,7 @@
         var lim = new Date(Date.now() + 7 * J); lim.setHours(23, 59, 0, 0);
         var cr = '';
         if (r.creneau && r.creneau.date) { var d = new Date(r.creneau.date + 'T12:00'); cr = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][d.getDay()] + ' ' + d.getDate() + (r.creneau.moment ? ', ' + r.creneau.moment : ''); }
-        var resa = { code: code(), numero: 'R' + Date.now(), article: a, limite: lim.getTime(), reserveLe: Date.now(), statut: 'active', creneau: cr, prenom: utilisateur.prenom, telephone: utilisateur.telephone, emplacement: 'Étagère B2' };
+        var resa = { point: r.point || 'La Blanche', code: code(), numero: 'R' + Date.now(), article: a, limite: lim.getTime(), reserveLe: Date.now(), statut: 'active', creneau: cr, prenom: utilisateur.prenom, telephone: utilisateur.telephone, emplacement: 'Étagère B2' };
         resas.unshift(resa); return ok(resa);
       }
       case 'mesReservations': return ok({ reservations: resas, attentes: attentes });
@@ -218,6 +227,35 @@
       case 'equipeMateriel': return ok(outils);
       case 'equipeStatutMateriel': outils.forEach(function (o) { if (o.id === r.id) o.statut = r.statut; }); return ok({});
       case 'equipeAjouterMateriel': outils.push({ id: 'O' + Date.now(), nom: r.outil.nom, categorie: r.outil.categorie, description: r.outil.description, caracteristiques: r.outil.caracteristiques, photos: r.photos, tarifJour: Number(String(r.outil.tarifJour).replace(',', '.')) || 0, tarifWeekend: Number(String(r.outil.tarifWeekend || '').replace(',', '.')) || 0, tarifSemaine: Number(String(r.outil.tarifSemaine || '').replace(',', '.')) || 0, caution: Number(r.outil.caution) || 0, consommables: [], statut: 'disponible', etat: r.outil.etat, pris: [] }); return ok({});
+      case 'completerProfil': Object.assign(utilisateur, r.profil || {}); utilisateur.conditionsOk = true; return ok(utilisateur);
+      case 'equipeModifierArticle': { var am = art(r.id); Object.assign(am, { titre: r.article.titre, prix: Number(String(r.article.prixSolde || r.article.prix).replace(',', '.')), prixInitial: r.article.prixSolde ? Number(String(r.article.prix).replace(',', '.')) : 0, description: r.article.description, photos: r.photos, emplacement: r.article.emplacement }); return ok({}); }
+      case 'equipeModifierMateriel': outils.forEach(function (o) { if (o.id === r.id) Object.assign(o, { nom: r.outil.nom, description: r.outil.description, photos: r.photos }); }); return ok({});
+      case 'equipePoints': return ok(config.points.map(function (x, i) { return Object.assign({ ligne: i + 2, actif: true, jours: (x.jours || []).join(', ') }, x); }));
+      case 'equipeSauverPoints': config.points = r.points.filter(function (x) { return x.actif; }).map(function (x) { return Object.assign({}, x, { jours: String(x.jours || '').split(',').map(function (j) { return j.trim(); }).filter(String) }); }); return window.BSBP_DEMO({ action: 'equipePoints' });
+      case 'syncFavoris': case 'logRecherche': return ok({});
+      case 'modifierDon': dons.forEach(function (d) { if (d.id === r.id) Object.assign(d, { description: r.don.description, photos: r.photos }); }); return ok({});
+      case 'annulerDon': dons.forEach(function (d) { if (d.id === r.id) d.statut = 'annulé'; }); return ok({});
+      case 'equipeTableau': {
+        var m12 = []; for (var k = 11; k >= 0; k--) { var dm = new Date(); dm.setDate(1); dm.setMonth(dm.getMonth() - k); m12.push({ mois: dm.toISOString().slice(0, 7), ventes: 20 + ((k * 7) % 15), ca: 180 + ((k * 53) % 160) }); }
+        return ok({ calculeLe: Date.now(),
+          aujourdhui: { retraitsAujourdhui: [{ nom: 'La Blanche', nb: 3 }, { nom: 'Au passage', nb: 1 }], retraitsDemain: [{ nom: 'La Blanche', nb: 2 }], reservationsEnCours: 9, sansCreneau: 3, finissentAujourdhui: 1, locationsARemettre: 2, locationsARecuperer: 1, retards: 0, messagesNonLus: 2, donsATraiter: 1, messagesSignales: 0 },
+          ventes: { j7: { ventes: 14, ca: 132, panier: 9.4 }, j30: { ventes: 61, ca: 548, panier: 8.98 }, an: { ventes: 410, ca: 3620, panier: 8.8 }, depuisDebut: { ventes: 410, ca: 3620 }, tauxRetrait: 86, nonRetirees30: 4,
+            parCategorie: [{ nom: 'Vêtements', nb: 38 }, { nom: 'Objets', nb: 17 }, { nom: 'Meubles', nb: 6 }], parPoint: [{ nom: 'La Blanche', nb: 33 }, { nom: 'Au passage', nb: 15 }, { nom: 'La repasserie', nb: 9 }, { nom: 'Au trésor de Melusine', nb: 4 }], mois: m12 },
+          stock: { enVente: 124, reserves: 9, valeur: 1430, nbAnciens: 18, parCategorie: [{ nom: 'Vêtements', nb: 81 }, { nom: 'Objets', nb: 31 }, { nom: 'Meubles', nb: 12 }],
+            anciens: articles.slice(0, 2).map(function (a, i) { return { id: a.id, titre: a.titre, prix: a.prix, jours: 45 - i * 8, photo: a.photos[0] }; }), vitesse: [{ nom: 'Meubles', jours: 4.5 }, { nom: 'Vêtements', jours: 9.2 }, { nom: 'Objets', jours: 13 }] },
+          location: { actif: true, outils: 3, enReparation: 1, locations30: 11, ca30: 196, occupation: 37, reservees: 2, top: [{ nom: 'Perceuse-visseuse 18 V', nb: 6 }, { nom: 'Tondeuse thermique', nb: 4 }] },
+          clients: { total: 236, nouveaux30: 31, actifs30: 118, acheteurs: 152, parCommune: [{ nom: 'Bailleul', nb: 141 }, { nom: 'Méteren', nb: 24 }, { nom: 'Nieppe', nb: 19 }, { nom: 'Steenwerck', nb: 14 }, { nom: 'Non renseigné', nb: 38 }],
+            parAge: [{ nom: '25 à 39 ans', nb: 88 }, { nom: '40 à 59 ans', nb: 71 }, { nom: '60 ans et plus', nb: 33 }, { nom: 'Moins de 25 ans', nb: 21 }], parConnu: [{ nom: 'Bouche-à-oreille', nb: 72 }, { nom: 'En boutique', nb: 54 }, { nom: 'Réseaux sociaux', nb: 41 }, { nom: 'Affiche', nb: 18 }] },
+          demande: { favorisTotal: 312, topFavoris: articles.slice(0, 2).map(function (a, i) { return { id: a.id, titre: a.titre, prix: a.prix, nb: 9 - i * 3, photo: a.photos[0] }; }), favorisParCategorie: [{ nom: 'Vêtements', nb: 190 }, { nom: 'Meubles', nb: 74 }, { nom: 'Objets', nb: 48 }],
+            alertesActives: 87, nbJamaisServies: 12, budgetMoyen: 24, jamaisServies: ['« poussette double »', '« vélo enfant », Objets, 20 € max', '« canapé d\'angle » et proches'],
+            motsAlertes: [{ nom: 'poussette', nb: 9 }, { nom: 'velo', nb: 7 }, { nom: 'canape', nb: 6 }, { nom: 'manteau', nb: 5 }, { nom: 'lego', nb: 4 }], alertesParCategorie: [{ nom: 'Vêtements › Enfant', nb: 21 }, { nom: 'Meubles', nb: 17 }, { nom: 'Toutes', nb: 15 }],
+            taillesDemandees: [{ nom: '38', nb: 9 }, { nom: 'M', nb: 8 }, { nom: '4 ans', nb: 6 }], attenteTop: [{ id: 'A3', titre: 'Lampe de chevet années 70', nb: 4 }],
+            recherchesTop: [{ nom: 'jean', nb: 41 }, { nom: 'robe', nb: 33 }, { nom: 'commode', nb: 18 }], recherchesSansResultat: [{ nom: 'poussette', nb: 14 }, { nom: 'trottinette', nb: 9 }, { nom: 'lit bebe', nb: 6 }] },
+          aFaire: { retraits: articles.slice(0, 2).map(function (a, i) { return { code: 'BP-K7Q' + i, titre: a.titre, prenom: ['Camille', 'Yacine'][i], creneau: i ? '' : 'aujourd\'hui matin', point: 'La Blanche', limite: Date.now() + J, photo: a.photos[0], emplacement: 'Étagère B2' }; }),
+            dons: [{ id: 'D1', description: 'Un sac de vêtements enfant 4-6 ans', prenom: 'Sophie', date: Date.now() - 3600e3, mode: 'Je l\'apporte au point de collecte', photos: [articles[0].photos[0]] }],
+            messages: [{ id: 'C9', prenom: 'Marc', article: 'Commode', dernier: 'Bonjour, est-elle toujours disponible ?' }], locations: [] },
+          impact: { kgMois: 74, co2Mois: 1630, kgTotal: 812, co2Total: 9870, dons: { proposes: 12, acceptes: 7 } } });
+      }
       case 'envoyerRetour': return (r.retour.message || '').trim().length < 5 ? ko('Décrivez en quelques mots ce qui se passe ou ce que vous aimeriez.') : ok({ id: 'B1' });
       case 'monBilan': {
         var tot = historique.reduce(function (t, r) { t.kg += r.kg; t.co2 += r.co2; t.depense += r.prix; return t; }, { articles: historique.length, kg: 0, co2: 0, depense: 0 });
