@@ -1,5 +1,6 @@
 /* Bailleul Super Bon Plan : cache de l'application + notifications de la version web. */
-var VERSION = 'bonplan-6.2.0';
+var VERSION = 'bonplan-6.4.0';
+var PHOTOS = 'bonplan-photos';
 var FICHIERS = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'demo.js', 'vendor/qrcode.js', 'manifest.webmanifest',
   'fonts/bricolage-grotesque-latin-400-normal.woff2', 'fonts/bricolage-grotesque-latin-600-normal.woff2', 'fonts/bricolage-grotesque-latin-800-normal.woff2',
   'icones/icone-192.png', 'icones/apple-touch-icon.png'];
@@ -9,12 +10,25 @@ self.addEventListener('install', function (e) {
 });
 self.addEventListener('activate', function (e) {
   e.waitUntil(caches.keys().then(function (cles) {
-    return Promise.all(cles.filter(function (k) { return k !== VERSION; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(cles.filter(function (k) { return k !== VERSION && k !== PHOTOS; }).map(function (k) { return caches.delete(k); }));
   }).then(function () { return self.clients.claim(); }));
 });
 self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return; // moteur Google, photos, Firebase : jamais en cache ici
+  // Photos des articles : gardées sur le téléphone, affichées instantanément à la visite suivante
+  if (e.request.method === 'GET' && (url.hostname === 'lh3.googleusercontent.com' || (url.hostname === 'drive.google.com' && url.pathname === '/thumbnail'))) {
+    e.respondWith(caches.open(PHOTOS).then(function (c) {
+      return c.match(e.request).then(function (enCache) {
+        if (enCache) return enCache;
+        return fetch(e.request).then(function (r) {
+          if (r && (r.ok || r.type === 'opaque')) { c.put(e.request, r.clone()); c.keys().then(function (k) { if (k.length > 400) k.slice(0, k.length - 400).forEach(function (x) { c.delete(x); }); }); }
+          return r;
+        });
+      });
+    }));
+    return;
+  }
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return; // moteur Google et Firebase : jamais en cache ici
   if (url.pathname.indexOf('/donnees/') >= 0) return; // copie du catalogue : toujours la plus récente
   e.respondWith(caches.open(VERSION).then(function (c) {
     return c.match(e.request, { ignoreSearch: true }).then(function (enCache) {

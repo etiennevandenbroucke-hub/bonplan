@@ -4,7 +4,7 @@
 
   var API_URL = (window.BSBP_CONFIG && window.BSBP_CONFIG.API_URL || '').trim();
   var MODE_DEMO = !API_URL;
-  var VERSION_APP = '6.2.0';
+  var VERSION_APP = '6.4.0';
   var Cap = window.Capacitor;
   var Plugins = (Cap && Cap.Plugins) || {};
   var NATIF = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
@@ -34,7 +34,7 @@
 
   // ================= API =================
   // Lectures : on peut réessayer sans risque. Écritures : seulement si le moteur était occupé (rien n'a été enregistré).
-  var LECTURES = ['equipeTableau', 'equipePoints', 'demarrage', 'config', 'articles', 'article', 'materiel', 'outil', 'mesLocations', 'equipeLocations', 'equipeMateriel', 'photo', 'moi', 'mesReservations', 'mesAlertes', 'mesDons', 'monBilan',
+  var LECTURES = ['mesResas', 'equipeTableau', 'equipePoints', 'demarrage', 'config', 'articles', 'article', 'materiel', 'outil', 'mesLocations', 'equipeLocations', 'equipeMateriel', 'photo', 'moi', 'mesReservations', 'mesAlertes', 'mesDons', 'monBilan',
     'mesConversations', 'lireConversation', 'equipeReservations', 'equipeArticles', 'equipeDons', 'equipeAnimations', 'equipeConversations',
     'equipeLireConversation', 'equipeReglages'];
   function attendre(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -65,26 +65,29 @@
   var memoire = {};
   function avecMemoire(action, donnees) {
     var cle = action + JSON.stringify(donnees || {});
-    var cb = null, cbErr = null, dejaRendu = null;
+    var cb = null, cbErr = null, dejaRendu = null, vid = etat.vueId;
     var enCache = memoire[cle];
     var o = {
       then: function (f) {
         cb = f;
-        if (enCache) { dejaRendu = JSON.stringify(enCache); setTimeout(function () { f(enCache); }, 0); }
+        if (enCache) { dejaRendu = JSON.stringify(enCache); setTimeout(function () { if (etat.vueId === vid) f(enCache); }, 0); }
         return o;
       },
       catch: function (f) { cbErr = f; return o; }
     };
     api(action, donnees).then(function (d) {
       memoire[cle] = d;
-      if (action === 'mesReservations') stockage.set('memo_resa', JSON.stringify(d));
-      if (cb && JSON.stringify(d) !== dejaRendu) cb(d);
-    }).catch(function (e) { if (!enCache && cbErr) cbErr(e); });
+      if (action === 'mesResas') stockage.set('memo_resa', JSON.stringify(d));
+      if (action === 'equipeTableau') stockage.set('memo_tableau', JSON.stringify(d));
+      if (cb && etat.vueId === vid && JSON.stringify(d) !== dejaRendu) cb(d);
+    }).catch(function (e) { if (!enCache && cbErr && etat.vueId === vid) cbErr(e); });
     return o;
   }
+  /** Met à jour tout de suite la liste gardée en mémoire (Mes résas, Messages), sans attendre le moteur. */
+  function majMemoire(cle, f) { var m = memoire[cle]; if (!m) return; try { f(m); stockage.set('memo_resa', JSON.stringify(memoire['mesResas{}'] || {})); } catch (e) { delete memoire[cle]; } }
   function precharger() {
     if (!etat.jeton) return;
-    ['mesReservations', 'mesConversations'].concat(etat.utilisateur && etat.utilisateur.role ? ['equipeReservations', 'equipeConversations'] : [])
+    ['mesResas', 'mesConversations'].concat(etat.utilisateur && etat.utilisateur.role ? ['equipeReservations', 'equipeConversations'] : [])
       .forEach(function (a) { api(a).then(function (d) { memoire[a + '{}'] = d; }).catch(function () {}); });
   }
   function erreurUtilisateur(m) { var e = new Error(m); e.utilisateur = true; return e; }
@@ -125,10 +128,20 @@
 
   // Photos : vignette Drive publique, sinon récupération par l'API (si le partage public est bloqué).
   var cachePhotos = {};
+  /** « −20 % sur tout », « sur la location », « sur les Vêtements »… */
+  function libelleRemise(sur) {
+    var s0 = sansAccents(sur || 'Tout');
+    if (s0 === 'tout' || s0 === '') return 'sur tout';
+    if (s0 === 'location') return 'sur la location';
+    if (s0 === 'a la une') return 'sur la sélection « À la une »';
+    var cats = cfg().categories || [];
+    return cats.indexOf(sur) >= 0 ? 'sur les ' + sur.toLowerCase() : 'sur « ' + sur + ' »';
+  }
   function urlPhoto(ref, largeur) {
     if (!ref) return '';
     if (/^(https?:|data:)/.test(ref)) return ref;
-    return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(ref) + '&sz=w' + (largeur || 800);
+    var l = Math.min(1600, Math.round((largeur || 800) * Math.min(2, window.devicePixelRatio || 1) / 2));
+    return 'https://lh3.googleusercontent.com/d/' + encodeURIComponent(ref) + '=w' + Math.max(200, l);
   }
   function imgPhoto(ref, alt, largeur) {
     if (!ref) return '<div class="sans-photo">Pas de photo</div>';
@@ -138,9 +151,10 @@
   document.addEventListener('error', function (e) {
     var img = e.target;
     if (img.tagName !== 'IMG' || !img.dataset.ref || img.dataset.secours) return;
-    img.dataset.secours = '1';
     var ref = img.dataset.ref;
     if (/^(https?:|data:)/.test(ref)) return;
+    if (!img.dataset.essai2) { img.dataset.essai2 = '1'; img.src = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(ref) + '&sz=w800'; return; }
+    img.dataset.secours = '1';
     api('photo', { id: ref }).then(function (data) { cachePhotos[ref] = data; img.src = data; }).catch(function () {});
   }, true);
 
@@ -214,7 +228,9 @@
   Object.keys(ONGLETS_EQUIPE).forEach(function (k) { vues[k] = function () { etat.equipeVue = ONGLETS_EQUIPE[k]; vues.equipe(); }; });
   function afficher() {
     arreterParticules();
-    if (etat.poll) { clearInterval(etat.poll); etat.poll = null; }
+    if (etat.poll) { clearInterval(etat.poll); clearTimeout(etat.poll); etat.poll = null; }
+    etat.relancerConv = null;
+    etat.vueId = (etat.vueId || 0) + 1; // les réponses qui arrivent après un changement d'écran sont ignorées
     $vue.onclick = null;
     var courant = etat.pile[etat.pile.length - 1];
     if (courant.nom !== 'retour') etat.ecran = courant.nom;
@@ -323,7 +339,7 @@
       var fond = b.image ? (/^data:/.test(b.image) ? b.image : urlPhoto(b.image, 1200)) : '';
       return '<div class="bandeau' + (fond ? ' avec-image' : '') + '" data-theme-b="' + esc(b.theme) + '">' +
         (fond ? '<img class="bandeau-fond" src="' + esc(fond) + '" alt="">' : '<canvas aria-hidden="true" data-particules="' + esc((THEMES[b.theme] || {}).particules || '') + '"></canvas>') +
-        (b.remise ? '<span class="bandeau-remise">−' + esc(b.remise) + ' %</span>' : '') +
+        (b.remise ? '<span class="bandeau-remise">−' + esc(b.remise) + ' %<small>' + esc(libelleRemise(b.remiseSur)) + '</small></span>' : '') +
         '<div class="bandeau-texte"><h2>' + esc(b.titre) + '</h2>' + (b.texte ? '<p>' + esc(b.texte) + '</p>' : '') +
         (b.bouton && b.lien ? '<button class="bouton-bandeau" data-bandeau="' + i + '">' + esc(b.bouton) + '</button>' : '') + '</div>' +
         '</div>';
@@ -467,6 +483,13 @@
     return '<span class="prix' + (grand ? ' grand' : '') + (solde ? ' solde' : '') + '">' + (solde ? '<s>' + prix(initial) + '</s> ' : '') + prix(p0) + (suffixe ? '<small>' + suffixe + '</small>' : '') + '</span>' +
       (solde ? '<span class="badge-remise' + (grand ? ' grand' : '') + '">−' + Math.round((1 - p0 / initial) * 100) + ' %</span>' : '');
   }
+  var fichesEnCours = {};
+  function prechargerFiche(id) {
+    var a = trouverArticle(id);
+    if (!a || !a.leger || fichesEnCours[id]) return;
+    fichesEnCours[id] = api('article', { id: id });
+    fichesEnCours[id].catch(function () { delete fichesEnCours[id]; });
+  }
   function carte(a) {
     return '<div class="carte' + (a.disponible ? '' : ' indispo') + '" data-id="' + esc(a.id) + '" role="link" tabindex="0" aria-label="' + esc(a.titre + ', ' + prix(a.prix)) + '">' +
       '<div class="photo">' + imgPhoto(a.photos[0], '', 600) +
@@ -477,6 +500,7 @@
   }
   function brancherCartes(zone) {
     zone.addEventListener('click', function (e) { var c = e.target.closest('.carte'); if (c && !e.target.closest('[data-fav]')) aller('article', { id: c.dataset.id }); });
+    zone.addEventListener('pointerdown', function (e) { var c = e.target.closest('.carte'); if (c) prechargerFiche(c.dataset.id); }, { passive: true });
     zone.addEventListener('keydown', function (e) { var c = e.target.closest('.carte'); if (c && e.key === 'Enter') aller('article', { id: c.dataset.id }); });
   }
   function rangee(titre, articles, id) {
@@ -670,8 +694,8 @@
     var a = trouverArticle(p.id);
     if (!a) { retour(); return; }
     if (a.leger && !p.chargement) {
-      // Fiche affichée tout de suite avec ce qu'on a, complétée dès que le détail arrive.
-      api('article', { id: a.id }).then(function (complet) {
+      // Fiche affichée tout de suite avec ce qu'on a, complétée dès que le détail arrive (souvent déjà demandé au toucher).
+      (fichesEnCours[a.id] || api('article', { id: a.id })).then(function (complet) {
         Object.assign(a, complet); a.leger = false;
         var c0 = etat.pile[etat.pile.length - 1];
         if (c0 && c0.nom === 'article' && c0.params.id === a.id) { var y = window.scrollY; vues.article({ id: a.id, chargement: true }); window.scrollTo(0, y); }
@@ -818,6 +842,7 @@
         a.disponible = false; a.statut = 'réservé';
         etat.mesAttentes = etat.mesAttentes.filter(function (w) { return !w.article || w.article.id !== a.id; });
         programmerRappel(resa);
+        majMemoire('mesResas{}', function (m) { m.achats.reservations = [Object.assign({ prixPaye: a.prix }, resa)].concat(m.achats.reservations || []); });
         etat.pile = [{ nom: 'catalogue', params: {} }];
         aller('confirmation', { resa: resa });
       }).catch(function (e) { chargement(btn, false); erreur(e); if (/Trop tard/.test(e.message)) etat.articles = null; });
@@ -934,8 +959,9 @@
       return;
     }
     $vue.innerHTML += '<div id="mes-locations"></div><div id="liste"><div class="resa"><div class="vignette squelette"></div><div></div></div></div>';
-    if (cfg().location && cfg().location.active) avecMemoire('mesLocations').then(dessinerMesLocations).catch(function () {});
-    avecMemoire('mesReservations').then(function (r) {
+    avecMemoire('mesResas').then(function (tout) {
+      if (cfg().location && cfg().location.active) dessinerMesLocations(tout.locations || []);
+      var r = tout.achats;
       etat.mesAttentes = r.attentes || []; majPastille();
       var zone = document.getElementById('liste'); if (!zone) return;
       var liste = r.reservations, attentes = r.attentes || [];
@@ -974,7 +1000,11 @@
         ]).then(function (ok) {
           if (!ok) return;
           chargement(b, true);
-          api('annulerReservation', { code: code }).then(function () { annulerRappel(code); etat.articles = null; toast('Réservation annulée.'); vues.reservations(); })
+          api('annulerReservation', { code: code }).then(function () {
+            annulerRappel(code); etat.articles = null; toast('Réservation annulée.');
+            majMemoire('mesResas{}', function (m) { (m.achats.reservations || []).forEach(function (x) { if (x.code === code) x.statut = 'annulée'; }); });
+            vues.reservations();
+          })
             .catch(function (err) { chargement(b, false); erreur(err); });
         });
       };
@@ -1295,6 +1325,8 @@
       FM().addListener('notificationReceived', function (ev) {
         var n = ev.notification || {};
         banniere(n.title, n.body, n.data);
+        if (etat.rafraichirConversation && etat.relancerConv) { etat.relancerConv(); etat.rafraichirConversation(); }
+        delete memoire['mesConversations{}']; delete memoire['equipeConversations{}']; delete memoire['mesResas{}'];
         rafraichirMesAttentes().catch(function () {});
         rafraichirNonLus();
         var c = etat.pile[etat.pile.length - 1];
@@ -1308,6 +1340,7 @@
     }
     /** Bandeau façon notification, quand l'app est ouverte (et en démo). */
     function banniere(titre, corps, data) {
+      if (etat.rafraichirConversation && etat.relancerConv) { etat.relancerConv(); setTimeout(function () { if (etat.rafraichirConversation) etat.rafraichirConversation(); }, 300); }
       var b = document.getElementById('banniere-push');
       if (!b) { b = document.createElement('button'); b.id = 'banniere-push'; document.body.appendChild(b); }
       b.innerHTML = '<span class="bp-icone">€</span><span><b>' + esc(titre || '') + '</b>' + esc(corps || '') + '</span>';
@@ -1821,7 +1854,7 @@
       var d = Object.fromEntries(new FormData(f));
       arreterParticules();
       var ap = document.getElementById('apercu');
-      ap.innerHTML = htmlBandeaux([{ theme: cle(d.theme), titre: d.titre || 'Titre du bandeau', texte: d.texte, bouton: d.bouton, lien: d.bouton ? { type: 'aucun' } : null, image: imageAnim[0] || '', remise: Number(d.remise) || 0 }]);
+      ap.innerHTML = htmlBandeaux([{ theme: cle(d.theme), titre: d.titre || 'Titre du bandeau', texte: d.texte, bouton: d.bouton, lien: d.bouton ? { type: 'aucun' } : null, image: imageAnim[0] || '', remise: Number(d.remise) || 0, remiseSur: d.remiseSur }]);
       ap.querySelectorAll('canvas').forEach(function (cv) { lancerParticules(cv, cv.dataset.particules); });
     }
     f.addEventListener('input', apercu); f.addEventListener('change', apercu); apercu();
@@ -1901,6 +1934,8 @@
     var fil = document.getElementById('fil'), ta = document.getElementById('msg');
     ta.addEventListener('input', function () { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; });
     function rendre(r) {
+      if (r && r.messages && dernierRendu && JSON.stringify(r.messages).length !== (etat.tailleConv || 0) && etat.relancerConv) etat.relancerConv();
+      etat.tailleConv = r && r.messages ? JSON.stringify(r.messages).length : 0;
       if (!document.getElementById('fil')) return;
       if (r.conversation) idConv = r.conversation.id;
       var a = r.article || {};
@@ -1977,11 +2012,28 @@
       var texteEnvoye = ta.value; ta.value = ''; ta.style.height = 'auto';
       api(equipe ? 'equipeRepondre' : 'envoyerMessage', { id: idConv, idArticle: p.idArticle, email: p.email, texte: texte, photo: photoJointe[0] || null }).then(function (r) {
         btn.disabled = false; photoJointe = []; majApercu(); dernierRendu = ''; rendre(r);
+        if (etat.relancerConv) etat.relancerConv();
+        ['mesConversations{}', 'equipeConversations{}'].forEach(function (cle) {
+          var l = memoire[cle]; if (!l || !r.conversation) return;
+          var c0 = l.filter(function (x) { return x.id === r.conversation.id; })[0];
+          if (c0) { c0.extrait = texteEnvoye.slice(0, 90) || 'Photo envoyée'; c0.dernier = Date.now(); if (equipe) c0.nonLuEquipe = false; else c0.nonLuClient = false; l.sort(function (x, y) { return y.dernier - x.dernier; }); }
+          else delete memoire[cle];
+        });
         if (!equipe && r.messages.length === 1) Push.proposer('Vous saurez tout de suite quand l\'équipe vous répond.');
       }).catch(function (err) { btn.disabled = false; tmp.remove(); ta.value = texteEnvoye; erreur(err); });
     };
     charger();
-    etat.poll = setInterval(function () { if (!document.hidden) charger(); }, 12000);
+    // Vérification des nouveaux messages : toutes les 4 s juste après un échange, puis de plus en plus espacé.
+    var derniereActivite = Date.now();
+    etat.relancerConv = function () { derniereActivite = Date.now(); };
+    var boucle = function () {
+      var calme = Date.now() - derniereActivite;
+      var delai = calme < 60000 ? 4000 : calme < 300000 ? 10000 : 20000;
+      etat.poll = setTimeout(function () {
+        if (!document.hidden) charger().then(boucle, boucle); else boucle();
+      }, delai);
+    };
+    boucle();
   };
 
   // ================= Mes tailles =================
@@ -2185,7 +2237,11 @@
       if (!exigerConnexion('Connectez-vous pour réserver « ' + m.nom + ' ».', function () { aller('outil', { id: m.id }, true); })) return;
       var btn = this; chargement(btn, true, 'Réservation…');
       api('reserverLocation', { idMateriel: m.id, debut: choix.debut, fin: choix.fin, consommables: choix.consos, moment: choix.moment }).then(function (r) {
-        delete memoire['mesLocations{}']; delete memoire['materiel{}'];
+        delete memoire['materiel{}'];
+        majMemoire('mesResas{}', function (mm) {
+          mm.locations = [{ code: r.code, statut: 'réservée', idOutil: r.outil.id, nom: r.outil.nom, photo: r.outil.photos[0], debut: r.debut, fin: r.fin, moment: r.moment,
+            prix: r.prix, caution: r.caution, consommables: r.consommables, remise: { photos: [], etat: '' }, retour: { photos: [], etat: '' } }].concat(mm.locations || []);
+        });
         etat.pile = [{ nom: 'louer', params: {} }];
         aller('confirmationLocation', { loc: r });
       }).catch(function (e) { chargement(btn, false); erreur(e); if (/Trop tard/.test(e.message)) api('outil', { id: m.id }).then(function (o) { pris = o.pris; choix.debut = choix.fin = null; dessinerCal(); }); });
@@ -2240,7 +2296,11 @@
       var ed = e.target.closest('[data-edl]'); if (ed) { aller('voirEdl', { loc: l.filter(function (x) { return x.code === ed.dataset.edl; })[0] }); return; }
       var an = e.target.closest('[data-annuler-loc]'); if (!an) return;
       modale('Annuler cette location ?', 'L\'outil sera de nouveau disponible pour d\'autres personnes.', [{ texte: 'Oui, annuler', valeur: true, style: 'danger' }, { texte: 'Garder ma location', valeur: false, style: 'second' }])
-        .then(function (ok) { if (ok) api('annulerLocation', { code: an.dataset.annulerLoc }).then(function () { toast('Location annulée.'); delete memoire['materiel{}']; vues.reservations(); }).catch(erreur); });
+        .then(function (ok) { if (ok) api('annulerLocation', { code: an.dataset.annulerLoc }).then(function () {
+          toast('Location annulée.'); delete memoire['materiel{}'];
+          majMemoire('mesResas{}', function (mm) { (mm.locations || []).forEach(function (x) { if (x.code === an.dataset.annulerLoc) x.statut = 'annulée'; }); });
+          vues.reservations();
+        }).catch(erreur); });
     };
   }
 
@@ -2373,90 +2433,116 @@
 
   // ================= Tableau de bord de l'équipe =================
   function equipeTableau(zone, rafraichir) {
-    zone.innerHTML = '<p class="meta">Calcul en cours…</p>';
+    if (!memoire['equipeTableau{}']) zone.innerHTML = '<div class="tdb-squelette"><div></div><div></div><div></div><div></div></div>';
     var nb = function (x) { return x == null ? '—' : String(x).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f'); };
-    var tuile = function (val, lib, aller0, alerte) { return '<button class="tuile' + (alerte ? ' alerte' : '') + '"' + (aller0 ? ' data-aller="' + aller0 + '"' : '') + '><b>' + val + '</b><span>' + esc(lib) + '</span></button>'; };
+    var somme = function (l) { return (l || []).reduce(function (s0, x) { return s0 + x.nb; }, 0); };
+    // Évolution par rapport à la période précédente : ▲ vert, ▼ rouge
+    var tendance = function (v, avant) {
+      if (avant == null || !(avant > 0)) return '';
+      var pct = Math.round((v - avant) / avant * 100);
+      if (pct === 0) return '<span class="tendance">= stable</span>';
+      return '<span class="tendance ' + (pct > 0 ? 'hausse' : 'baisse') + '">' + (pct > 0 ? '▲ +' : '▼ ') + pct + ' %</span>';
+    };
+    var kpi = function (val, lib, opts) {
+      opts = opts || {};
+      return '<button class="kpi' + (opts.ton ? ' ' + opts.ton : '') + '"' + (opts.aller ? ' data-aller="' + opts.aller + '"' : '') + '>' +
+        '<span class="kpi-lib">' + esc(lib) + '</span><b>' + val + '</b>' + (opts.sous ? '<span class="kpi-sous">' + opts.sous + '</span>' : '') + (opts.tendance || '') + '</button>';
+    };
     var barres = function (l, unite, max) {
       if (!l || !l.length) return '<p class="meta">Pas encore de données.</p>';
       var m = Math.max.apply(null, l.map(function (x) { return x.nb; })) || 1;
-      return '<div class="barres">' + l.slice(0, max || 8).map(function (x) {
+      return '<div class="barres">' + l.slice(0, max || 6).map(function (x) {
         return '<div class="barre"><span class="lib">' + esc(x.nom) + '</span><span class="jauge"><i style="width:' + Math.max(4, Math.round(x.nb / m * 100)) + '%"></i></span><span class="val">' + nb(x.nb) + (unite || '') + '</span></div>';
       }).join('') + '</div>';
     };
     var puces = function (l, vide) { return l && l.length ? '<div class="choix">' + l.map(function (x) { return '<span class="puce statique">' + esc(x.nom) + (x.nb > 1 ? ' <em>' + x.nb + '</em>' : '') + '</span>'; }).join('') + '</div>' : '<p class="meta">' + vide + '</p>'; };
-    var section = function (titre, contenu, aide) { return '<section class="bloc-tdb"><h2 class="section">' + titre + '</h2>' + (aide ? '<p class="meta">' + aide + '</p>' : '') + contenu + '</section>'; };
+    // Section repliable : le résumé (toujours visible) donne déjà l'essentiel
+    var pli = function (titre, resume, contenu, ouvert) {
+      return '<details class="pli"' + (ouvert ? ' open' : '') + '><summary><span class="pli-titre">' + titre + '</span><span class="pli-resume">' + resume + '</span></summary><div class="pli-corps">' + contenu + '</div></details>';
+    };
     var dessiner = function (t) {
       var a = t.aujourdhui, v = t.ventes, st = t.stock, lo = t.location, cl = t.clients, d = t.demande, im = t.impact;
-      var somme = function (l) { return (l || []).reduce(function (s0, x) { return s0 + x.nb; }, 0); };
-      var maxCa = Math.max.apply(null, v.mois.map(function (m) { return m.ca; })) || 1;
       var af = t.aFaire || { retraits: [], dons: [], messages: [], locations: [] };
-      var blocAF = function (titre, items, rendu, vide, cible) {
-        return '<div class="bloc-afaire"><div class="tete-af"><h3>' + titre + ' <em>' + items.length + '</em></h3>' + (cible ? '<button class="lien" data-aller="' + cible + '">Tout voir</button>' : '') + '</div>' +
-          (items.length ? items.map(rendu).join('') : '<p class="meta">' + vide + '</p>') + '</div>';
+      var urgences = [];
+      if (lo.actif && a.retards) urgences.push(['eq-locations', a.retards + ' location' + (a.retards > 1 ? 's' : '') + ' en retard', 'rouge']);
+      if (a.finissentAujourdhui) urgences.push(['eq-retraits', a.finissentAujourdhui + ' réservation' + (a.finissentAujourdhui > 1 ? 's expirent' : ' expire') + ' ce soir', 'rouge']);
+      if (a.messagesNonLus) urgences.push(['eq-messages', a.messagesNonLus + ' message' + (a.messagesNonLus > 1 ? 's' : '') + ' sans réponse', 'orange']);
+      if (a.donsATraiter) urgences.push(['dons', a.donsATraiter + ' don' + (a.donsATraiter > 1 ? 's' : '') + ' à traiter', 'orange']);
+      if (a.messagesSignales) urgences.push([null, a.messagesSignales + ' message' + (a.messagesSignales > 1 ? 's signalés' : ' signalé') + ' à vérifier', 'rouge']);
+      if (lo.actif && lo.enReparation) urgences.push(['materiel', lo.enReparation + ' outil' + (lo.enReparation > 1 ? 's' : '') + ' en réparation', 'gris']);
+      var maxCa = Math.max.apply(null, v.mois.map(function (m) { return m.ca; })) || 1;
+      var listeAF = function (items, rendu, max) {
+        if (!items.length) return '';
+        return items.slice(0, max || 3).map(rendu).join('') + (items.length > (max || 3) ? '<p class="meta plus-af">et ' + (items.length - (max || 3)) + ' autre' + (items.length - (max || 3) > 1 ? 's' : '') + '…</p>' : '');
       };
+      var ventesAuj = somme(a.retraitsAujourdhui), ventesDem = somme(a.retraitsDemain);
       zone.innerHTML =
-        '<p class="meta">Mis à jour à ' + heure(t.calculeLe) + ' <button class="lien" id="maj-tdb">Actualiser</button></p>' +
-        section('À faire',
-          blocAF('Retraits d\'aujourd\'hui et de demain', af.retraits, function (r) {
-            return '<button class="ligne-af" data-aller="eq-retraits"><span class="vignette">' + imgPhoto(r.photo, '', 200) + '</span><span><b>' + esc(r.titre) + '</b><span>' + esc(r.prenom) + ' · ' + esc(r.code) +
-              (r.point ? ' · ' + esc(r.point) : '') + '</span><span>' + (r.creneau ? 'Passe ' + esc(r.creneau) : 'Dernier jour : ' + esc(dateLongue(r.limite))) + (r.emplacement ? ' · ' + esc(r.emplacement) : '') + '</span></span></button>';
-          }, 'Aucun retrait prévu.', 'eq-retraits') +
-          blocAF('Propositions de dons', af.dons, function (d) {
-            return '<div class="ligne-af">' + (d.photos[0] ? '<button class="vignette" data-agrandir-don>' + imgPhoto(d.photos[0], 'Photo du don', 800) + '</button>' : '<span class="vignette"></span>') +
-              '<button class="texte-af" data-aller="dons"><b>' + esc(d.description.slice(0, 70)) + '</b><span>' + esc(d.prenom) + ' · ' + esc(dateLongue(d.date)) + '</span><span>' + esc(d.mode) + '</span></button></div>';
-          }, 'Aucun don en attente.', 'dons') +
-          blocAF('Messages non lus', af.messages, function (m) {
-            return '<button class="ligne-af" data-conv-af="' + esc(m.id) + '"><span><b>' + esc(m.prenom) + ' · ' + esc(m.article) + '</b><span>' + esc(m.dernier.slice(0, 90)) + '</span></span></button>';
-          }, 'Aucun message en attente.', 'eq-messages') +
-          (lo.actif ? blocAF('Locations du jour', af.locations, function (l) {
-            return '<button class="ligne-af" data-aller="eq-locations"><span><b>' + esc(l.nom) + '</b><span>' + esc(l.prenom) + ' · ' + esc(l.code) + ' · ' + esc(l.statut) + '</span><span>Du ' + esc(dateLongue(l.debut)) + ' au ' + esc(dateLongue(l.fin)) + '</span></span></button>';
-          }, 'Rien de prévu.', 'eq-locations') : '')) +
-        section('En chiffres aujourd\'hui',
-          '<div class="tuiles">' + tuile(somme(a.retraitsAujourdhui), 'retraits prévus aujourd\'hui', 'eq-retraits') + tuile(somme(a.retraitsDemain), 'retraits prévus demain', 'eq-retraits') +
-          tuile(a.reservationsEnCours, 'réservations en cours (' + a.sansCreneau + ' sans jour choisi)', 'eq-retraits') + tuile(a.finissentAujourdhui, 'réservations qui expirent ce soir', 'eq-retraits', a.finissentAujourdhui > 0) +
-          (lo.actif ? tuile(a.locationsARemettre, 'locations à remettre (aujourd\'hui, demain)', 'eq-locations') + tuile(a.locationsARecuperer, 'outils à récupérer', 'eq-locations') + tuile(a.retards, 'locations en retard', 'eq-locations', a.retards > 0) : '') +
-          tuile(a.messagesNonLus, 'messages non lus', 'eq-messages', a.messagesNonLus > 0) + tuile(a.donsATraiter, 'dons à traiter', 'dons', a.donsATraiter > 0) +
-          (a.messagesSignales ? tuile(a.messagesSignales, 'messages signalés à vérifier', null, true) : '') + '</div>' +
-          (somme(a.retraitsAujourdhui) ? '<p class="meta">Aujourd\'hui par point : ' + a.retraitsAujourdhui.map(function (x) { return esc(x.nom) + ' (' + x.nb + ')'; }).join(', ') + '</p>' : '')) +
-        section('Ventes',
-          '<div class="tuiles">' + tuile(nb(v.j7.ventes), 'vendus en 7 jours') + tuile(prix(v.j7.ca), 'encaissés en 7 jours') + tuile(nb(v.j30.ventes), 'vendus en 30 jours') + tuile(prix(v.j30.ca), 'encaissés en 30 jours') +
-          tuile(prix(v.j30.panier), 'prix moyen d\'un article') + tuile(v.tauxRetrait == null ? '—' : v.tauxRetrait + ' %', 'des réservations retirées (90 jours)', null, v.tauxRetrait != null && v.tauxRetrait < 70) +
-          tuile(nb(v.depuisDebut.ventes), 'articles vendus depuis le début') + tuile(prix(v.depuisDebut.ca), 'encaissés depuis le début') + '</div>' +
-          '<h3 class="sous-section">Chiffre d\'affaires des 12 derniers mois</h3><div class="histo">' + v.mois.map(function (m) {
-            return '<div><i style="height:' + Math.max(2, Math.round(m.ca / maxCa * 100)) + '%" title="' + esc(prix(m.ca)) + '"></i><span>' + MOIS[Number(m.mois.slice(5)) - 1].slice(0, 3) + '</span></div>'; }).join('') + '</div>' +
-          '<h3 class="sous-section">Ventes du mois par catégorie</h3>' + barres(v.parCategorie) +
-          '<h3 class="sous-section">Ventes du mois par point de retrait</h3>' + barres(v.parPoint)) +
-        section('Stock',
-          '<div class="tuiles">' + tuile(st.enVente, 'articles en vente', 'eq-stock') + tuile(prix(st.valeur), 'valeur du stock en ligne') + tuile(st.reserves, 'réservés en attente de retrait') + tuile(st.nbAnciens, 'en ligne depuis plus de 30 jours', 'eq-stock', st.nbAnciens > 0) + '</div>' +
-          '<h3 class="sous-section">En vente par catégorie</h3>' + barres(st.parCategorie) +
-          (st.anciens.length ? '<h3 class="sous-section">Ne trouvent pas preneur (à baisser ou mettre à la une)</h3>' + st.anciens.map(function (x) {
-            return '<div class="ligne-article">' + '<div class="vignette">' + imgPhoto(x.photo, '', 200) + '</div><div><h3>' + esc(x.titre) + '</h3><p>' + prix(x.prix) + ', en ligne depuis ' + x.jours + ' jours</p></div></div>'; }).join('') : '') +
-          (st.vitesse.length ? '<h3 class="sous-section">Ce qui part le plus vite (jours entre la mise en ligne et la vente)</h3>' + barres(st.vitesse.map(function (x) { return { nom: x.nom, nb: x.jours }; }), ' j') : '')) +
-        (lo.actif ? section('Location',
-          '<div class="tuiles">' + tuile(lo.locations30, 'locations en 30 jours', 'eq-locations') + tuile(prix(lo.ca30), 'de locations en 30 jours') + tuile(lo.occupation == null ? '—' : lo.occupation + ' %', 'taux d\'occupation du matériel') +
-          tuile(lo.outils, 'outils proposés') + tuile(lo.enReparation, 'en réparation', null, lo.enReparation > 0) + tuile(lo.reservees, 'locations à venir', 'eq-locations') + '</div>' +
-          '<h3 class="sous-section">Outils les plus loués</h3>' + barres(lo.top)) : '') +
-        section('Clients',
-          '<div class="tuiles">' + tuile(nb(cl.total), 'clients inscrits') + tuile(nb(cl.nouveaux30), 'nouveaux en 30 jours') + tuile(nb(cl.actifs30), 'venus sur l\'app en 30 jours') + tuile(nb(cl.acheteurs), 'ont déjà acheté') + '</div>' +
-          '<h3 class="sous-section">Par commune</h3>' + barres(cl.parCommune) + '<h3 class="sous-section">Par âge</h3>' + barres(cl.parAge) + '<h3 class="sous-section">Comment ils nous ont connus</h3>' + barres(cl.parConnu)) +
-        section('Ce que les gens cherchent',
-          '<div class="tuiles">' + tuile(nb(d.favorisTotal), 'articles mis en favori') + tuile(nb(d.alertesActives), 'alertes actives') + tuile(nb(d.nbJamaisServies), 'alertes jamais servies', null, d.nbJamaisServies > 0) + tuile(d.budgetMoyen == null ? '—' : prix(d.budgetMoyen), 'budget max moyen des alertes') + '</div>' +
-          '<h3 class="sous-section">Recherches sans résultat (30 jours) : à collecter en priorité</h3>' + puces(d.recherchesSansResultat, 'Aucune pour le moment.') +
-          '<h3 class="sous-section">Alertes jamais servies</h3>' + (d.jamaisServies.length ? '<ul class="liste-simple">' + d.jamaisServies.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<p class="meta">Toutes les alertes ont déjà trouvé au moins un article.</p>') +
+        '<div class="tdb-entete"><span>' + esc(dateLongue(Date.now())) + '</span><button class="lien" id="maj-tdb">↻ Actualiser (' + heure(t.calculeLe) + ')</button></div>' +
+        // 1. Ce qui demande une action
+        (urgences.length ? '<div class="urgences">' + urgences.map(function (u) { return '<button class="urgence ' + u[2] + '"' + (u[0] ? ' data-aller="' + u[0] + '"' : '') + '>' + esc(u[1]) + '</button>'; }).join('') + '</div>'
+          : '<div class="urgences"><span class="urgence vert">✓ Rien d\'urgent : tout est à jour</span></div>') +
+        // 2. La journée en 4 chiffres
+        '<div class="kpis">' +
+          kpi(nb(ventesAuj), 'Retraits aujourd\'hui', { aller: 'eq-retraits', sous: a.retraitsAujourdhui.map(function (x) { return esc(x.nom) + ' ' + x.nb; }).join(' · ') || 'aucun créneau prévu', ton: ventesAuj ? 'accent' : '' }) +
+          kpi(nb(ventesDem), 'Retraits demain', { aller: 'eq-retraits', sous: a.retraitsDemain.map(function (x) { return esc(x.nom) + ' ' + x.nb; }).join(' · ') || '—' }) +
+          (lo.actif ? kpi(nb(a.locationsARemettre + a.locationsARecuperer), 'Locations du jour', { aller: 'eq-locations', sous: a.locationsARemettre + ' à remettre · ' + a.locationsARecuperer + ' à récupérer' })
+            : kpi(nb(a.reservationsEnCours), 'Réservations en cours', { aller: 'eq-retraits', sous: a.sansCreneau + ' sans jour choisi' })) +
+          kpi(nb(st.enVente), 'Articles en vente', { aller: 'eq-stock', sous: st.reserves + ' réservés' }) +
+        '</div>' +
+        // 3. À faire, concrètement
+        ((af.retraits.length || af.dons.length || af.messages.length || af.locations.length) ? '<h2 class="section">À faire</h2><div class="afaire-grille">' +
+          (af.retraits.length ? '<div class="bloc-afaire"><div class="tete-af"><h3>Retraits <em>' + af.retraits.length + '</em></h3><button class="lien" data-aller="eq-retraits">Tout voir</button></div>' + listeAF(af.retraits, function (r) {
+            return '<button class="ligne-af" data-aller="eq-retraits"><span class="vignette">' + imgPhoto(r.photo, '', 200) + '</span><span><b>' + esc(r.titre) + '</b><span>' + esc(r.prenom) + ' · <strong>' + esc(r.code) + '</strong></span><span>' +
+              (r.creneau ? esc(r.creneau) : '<em class="rouge-txt">dernier jour</em>') + (r.point ? ' · ' + esc(r.point) : '') + (r.emplacement ? ' · ' + esc(r.emplacement) : '') + '</span></span></button>'; }) + '</div>' : '') +
+          (af.messages.length ? '<div class="bloc-afaire"><div class="tete-af"><h3>Messages <em>' + af.messages.length + '</em></h3><button class="lien" data-aller="eq-messages">Tout voir</button></div>' + listeAF(af.messages, function (m) {
+            return '<button class="ligne-af" data-conv-af="' + esc(m.id) + '"><span><b>' + esc(m.prenom) + ' · ' + esc(m.article) + '</b><span>« ' + esc(m.dernier.slice(0, 80)) + ' »</span></span></button>'; }) + '</div>' : '') +
+          (af.dons.length ? '<div class="bloc-afaire"><div class="tete-af"><h3>Dons <em>' + af.dons.length + '</em></h3><button class="lien" data-aller="dons">Tout voir</button></div>' + listeAF(af.dons, function (dn) {
+            return '<div class="ligne-af">' + (dn.photos[0] ? '<button class="vignette" data-agrandir-don>' + imgPhoto(dn.photos[0], 'Photo du don', 800) + '</button>' : '<span class="vignette"></span>') +
+              '<button class="texte-af" data-aller="dons"><b>' + esc(dn.description.slice(0, 60)) + '</b><span>' + esc(dn.prenom) + ' · ' + esc(dn.mode) + '</span></button></div>'; }) + '</div>' : '') +
+          (lo.actif && af.locations.length ? '<div class="bloc-afaire"><div class="tete-af"><h3>Locations <em>' + af.locations.length + '</em></h3><button class="lien" data-aller="eq-locations">Tout voir</button></div>' + listeAF(af.locations, function (l) {
+            return '<button class="ligne-af" data-aller="eq-locations"><span><b>' + esc(l.nom) + '</b><span>' + esc(l.prenom) + ' · <strong>' + esc(l.code) + '</strong> · ' + esc(l.statut) + '</span></span></button>'; }) + '</div>' : '') +
+          '</div>' : '') +
+        // 4. Les ventes, avec l'évolution
+        '<h2 class="section">Ventes</h2><div class="kpis">' +
+          kpi(prix(v.j7.ca), '7 derniers jours', { sous: nb(v.j7.ventes) + ' articles', tendance: tendance(v.j7.ca, v.j7prec && v.j7prec.ca) }) +
+          kpi(prix(v.j30.ca), '30 derniers jours', { sous: nb(v.j30.ventes) + ' articles', tendance: tendance(v.j30.ca, v.j30prec && v.j30prec.ca) }) +
+          kpi(prix(v.j30.panier), 'Prix moyen', { sous: 'sur 30 jours' }) +
+          kpi(v.tauxRetrait == null ? '—' : v.tauxRetrait + ' %', 'Réservations retirées', { sous: v.nonRetirees30 + ' non retirées en 30 j', ton: v.tauxRetrait != null && v.tauxRetrait < 70 ? 'alerte' : '' }) +
+        '</div>' +
+        '<div class="histo">' + v.mois.map(function (m, k) {
+          return '<div' + (k === v.mois.length - 1 ? ' class="courant"' : '') + '><em>' + (m.ca ? Math.round(m.ca) : '') + '</em><i style="height:' + Math.max(2, Math.round(m.ca / maxCa * 100)) + '%"></i><span>' + MOIS[Number(m.mois.slice(5)) - 1].slice(0, 3) + '</span></div>'; }).join('') + '</div>' +
+        '<p class="meta">Depuis le début : ' + nb(v.depuisDebut.ventes) + ' articles vendus, ' + prix(v.depuisDebut.ca) + '.</p>' +
+        // 5. Le détail, replié : le résumé suffit pour un coup d'œil
+        '<h2 class="section">En détail</h2>' +
+        pli('Ventes par catégorie et par point', esc((v.parCategorie[0] || {}).nom || '—') + ' en tête',
+          '<h3 class="sous-section">Par catégorie (30 jours)</h3>' + barres(v.parCategorie) + '<h3 class="sous-section">Par point de retrait (30 jours)</h3>' + barres(v.parPoint)) +
+        pli('Stock', nb(st.enVente) + ' en vente · <b class="' + (st.nbAnciens ? 'rouge-txt' : '') + '">' + nb(st.nbAnciens) + ' à relancer</b>',
+          '<p class="meta">Valeur du stock en ligne : ' + prix(st.valeur) + '</p>' + barres(st.parCategorie) +
+          (st.anciens.length ? '<h3 class="sous-section">En ligne depuis plus de 30 jours : baisser le prix ou mettre à la une</h3>' + st.anciens.map(function (x) {
+            return '<div class="ligne-article"><div class="vignette">' + imgPhoto(x.photo, '', 200) + '</div><div><h3>' + esc(x.titre) + '</h3><p>' + prix(x.prix) + ' · ' + x.jours + ' jours</p></div></div>'; }).join('') : '') +
+          (st.vitesse.length ? '<h3 class="sous-section">Ce qui part le plus vite (jours avant la vente)</h3>' + barres(st.vitesse.map(function (x) { return { nom: x.nom, nb: x.jours }; }), ' j') : '')) +
+        pli('Ce que les gens cherchent', '<b class="' + (d.recherchesSansResultat.length ? 'rouge-txt' : '') + '">' + d.recherchesSansResultat.length + ' recherches sans résultat</b> · ' + nb(d.alertesActives) + ' alertes',
+          '<h3 class="sous-section">Recherches sans résultat : à collecter en priorité</h3>' + puces(d.recherchesSansResultat, 'Aucune pour le moment.') +
+          '<h3 class="sous-section">Alertes jamais servies (' + d.nbJamaisServies + ')</h3>' + (d.jamaisServies.length ? '<ul class="liste-simple">' + d.jamaisServies.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<p class="meta">Toutes les alertes ont trouvé au moins un article.</p>') +
           '<h3 class="sous-section">Mots des alertes</h3>' + puces(d.motsAlertes, 'Pas encore d\'alertes.') +
-          '<h3 class="sous-section">Alertes par catégorie</h3>' + barres(d.alertesParCategorie) +
-          (d.taillesDemandees.length ? '<h3 class="sous-section">Tailles demandées</h3>' + barres(d.taillesDemandees) : '') +
-          '<h3 class="sous-section">Les plus mis en favori (encore en vente)</h3>' + (d.topFavoris.length ? d.topFavoris.map(function (x) {
-            return '<div class="ligne-article"><div class="vignette">' + imgPhoto(x.photo, '', 200) + '</div><div><h3>' + esc(x.titre) + '</h3><p>' + prix(x.prix) + ', ' + x.nb + ' personne' + (x.nb > 1 ? 's' : '') + ' l\'ont en favori</p></div></div>'; }).join('') : '<p class="meta">Pas encore de favoris.</p>') +
-          '<h3 class="sous-section">Favoris par catégorie</h3>' + barres(d.favorisParCategorie) +
+          '<h3 class="sous-section">Les plus mis en favori</h3>' + (d.topFavoris.length ? d.topFavoris.map(function (x) {
+            return '<div class="ligne-article"><div class="vignette">' + imgPhoto(x.photo, '', 200) + '</div><div><h3>' + esc(x.titre) + '</h3><p>' + prix(x.prix) + ' · ♥ ' + x.nb + '</p></div></div>'; }).join('') : '<p class="meta">Pas encore de favoris.</p>') +
           (d.attenteTop.length ? '<h3 class="sous-section">Listes d\'attente les plus longues</h3>' + barres(d.attenteTop.map(function (x) { return { nom: x.titre, nb: x.nb }; })) : '') +
-          '<h3 class="sous-section">Recherches les plus fréquentes (30 jours)</h3>' + puces(d.recherchesTop, 'Pas encore de recherches.')) +
-        section('Impact',
-          '<div class="tuiles">' + tuile(nb(im.kgMois) + ' kg', 'réemployés ce mois-ci') + tuile(nb(im.co2Mois) + ' kg', 'de CO₂ évités ce mois-ci') + tuile(nb(im.kgTotal) + ' kg', 'réemployés depuis le début') + tuile(nb(im.co2Total) + ' kg', 'de CO₂ évités depuis le début') +
-          tuile(im.dons.proposes, 'dons proposés en 30 jours', 'dons') + tuile(im.dons.acceptes, 'dons acceptés en 30 jours') + '</div>', 'Le détail par client reste dans le Google Sheet ; ici, uniquement des chiffres globaux.');
+          (d.taillesDemandees.length ? '<h3 class="sous-section">Tailles demandées</h3>' + barres(d.taillesDemandees) : '') +
+          '<h3 class="sous-section">Recherches les plus fréquentes</h3>' + puces(d.recherchesTop, 'Pas encore de recherches.') +
+          (d.budgetMoyen ? '<p class="meta">Budget maximum moyen indiqué dans les alertes : ' + prix(d.budgetMoyen) + '</p>' : '')) +
+        (lo.actif ? pli('Location', nb(lo.locations30) + ' locations · ' + prix(lo.ca30) + ' en 30 j',
+          '<p class="meta">Taux d\'occupation du matériel : ' + (lo.occupation == null ? '—' : lo.occupation + ' %') + ' · ' + lo.outils + ' outils · ' + lo.enReparation + ' en réparation · ' + lo.reservees + ' à venir</p>' +
+          '<h3 class="sous-section">Outils les plus loués</h3>' + barres(lo.top)) : '') +
+        pli('Clients', nb(cl.total) + ' inscrits · <b class="vert-txt">+' + nb(cl.nouveaux30) + '</b> ce mois-ci',
+          '<p class="meta">' + nb(cl.actifs30) + ' venus sur l\'app en 30 jours · ' + nb(cl.acheteurs) + ' ont déjà acheté</p>' +
+          '<h3 class="sous-section">Par commune</h3>' + barres(cl.parCommune) + '<h3 class="sous-section">Par âge</h3>' + barres(cl.parAge) + '<h3 class="sous-section">Comment ils nous ont connus</h3>' + barres(cl.parConnu)) +
+        pli('Impact', nb(im.kgMois) + ' kg réemployés ce mois-ci',
+          '<p class="meta">' + nb(im.co2Mois) + ' kg de CO₂ évités ce mois-ci · ' + nb(im.kgTotal) + ' kg et ' + nb(im.co2Total) + ' kg de CO₂ depuis le début · ' + im.dons.proposes + ' dons proposés, ' + im.dons.acceptes + ' acceptés en 30 jours</p>') +
+        '<p class="meta">Le détail par client reste dans le Google Sheet ; ici, uniquement des chiffres globaux.</p>';
       document.getElementById('maj-tdb').onclick = function () { delete memoire['equipeTableau{}']; equipeTableau(zone, true); };
       zone.onclick = function (e) {
-        var ag = e.target.closest('[data-agrandir-don]'); if (ag) { var im = ag.querySelector('img'); if (im) ouvrirImage(im.src); return; }
+        var ag = e.target.closest('[data-agrandir-don]'); if (ag) { var im0 = ag.querySelector('img'); if (im0) ouvrirImage(im0.src); return; }
         var cv = e.target.closest('[data-conv-af]'); if (cv) { ouvrirOnglet('eq-messages'); aller('conversation', { id: cv.dataset.convAf, equipe: true }); return; }
         var b = e.target.closest('[data-aller]'); if (!b) return;
         var cible = b.dataset.aller;
@@ -2560,7 +2646,7 @@
     stockage.get(cle).then(function (deja) {
       if (deja) return;
       stockage.set(cle, '1');
-      var texte = (b.remise ? '<b class="remise-popup">−' + b.remise + ' %</b> ' : '') + esc(b.texte || '');
+      var texte = (b.remise ? '<b class="remise-popup">−' + b.remise + ' % ' + esc(libelleRemise(b.remiseSur)) + '</b><br>' : '') + esc(b.texte || '');
       modale(b.titre, texte, [{ texte: b.bouton || 'Voir les articles', valeur: 'go' }, { texte: 'Plus tard', valeur: null, style: 'second' }]).then(function (v) {
         if (v !== 'go') return;
         var lien = b.lien || {};
@@ -2618,7 +2704,8 @@
     Push.brancher();
     var copieSite = NATIF ? Promise.resolve(null) : fetch('donnees/site.json', { cache: 'no-cache' }).then(function (x) { return x.ok ? x.json() : null; }).catch(function () { return null; });
     Promise.all([stockage.get('jeton'), stockage.get('favoris'), stockage.get('catalogue'), stockage.get('config'), stockage.get('memo_resa'), stockage.get('utilisateur'), copieSite]).then(function (r) {
-      try { if (r[4] && r[0]) memoire['mesReservations{}'] = JSON.parse(r[4]); } catch (e) {}
+      try { if (r[4] && r[0]) { var mr = JSON.parse(r[4]); if (mr.achats) memoire['mesResas{}'] = mr; } } catch (e) {}
+      stockage.get('memo_tableau').then(function (t) { try { if (t && r[0]) memoire['equipeTableau{}'] = JSON.parse(t); } catch (e) {} });
       try { if (r[5] && r[0]) etat.utilisateur = JSON.parse(r[5]); } catch (e) {}
       etat.jeton = r[0] || '';
       try { etat.favoris = JSON.parse(r[1] || '[]'); } catch (e) { etat.favoris = []; }

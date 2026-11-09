@@ -156,6 +156,7 @@
         var resa = { point: r.point || 'La Blanche', code: code(), numero: 'R' + Date.now(), article: a, limite: lim.getTime(), reserveLe: Date.now(), statut: 'active', creneau: cr, prenom: utilisateur.prenom, telephone: utilisateur.telephone, emplacement: 'Étagère B2' };
         resas.unshift(resa); return ok(resa);
       }
+      case 'mesResas': return ok({ achats: { reservations: resas, attentes: attentes }, locations: locations });
       case 'mesReservations': return ok({ reservations: resas, attentes: attentes });
       case 'changerCreneau': { var x0 = resas.filter(function (y) { return y.code === r.code; })[0]; var d2 = new Date(r.creneau.date + 'T12:00'); x0.creneau = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][d2.getDay()] + ' ' + d2.getDate() + (r.creneau.moment ? ', ' + r.creneau.moment : ''); return ok({ creneau: x0.creneau }); }
       case 'rejoindreAttente': {
@@ -239,7 +240,7 @@
         var m12 = []; for (var k = 11; k >= 0; k--) { var dm = new Date(); dm.setDate(1); dm.setMonth(dm.getMonth() - k); m12.push({ mois: dm.toISOString().slice(0, 7), ventes: 20 + ((k * 7) % 15), ca: 180 + ((k * 53) % 160) }); }
         return ok({ calculeLe: Date.now(),
           aujourdhui: { retraitsAujourdhui: [{ nom: 'La Blanche', nb: 3 }, { nom: 'Au passage', nb: 1 }], retraitsDemain: [{ nom: 'La Blanche', nb: 2 }], reservationsEnCours: 9, sansCreneau: 3, finissentAujourdhui: 1, locationsARemettre: 2, locationsARecuperer: 1, retards: 0, messagesNonLus: 2, donsATraiter: 1, messagesSignales: 0 },
-          ventes: { j7: { ventes: 14, ca: 132, panier: 9.4 }, j30: { ventes: 61, ca: 548, panier: 8.98 }, an: { ventes: 410, ca: 3620, panier: 8.8 }, depuisDebut: { ventes: 410, ca: 3620 }, tauxRetrait: 86, nonRetirees30: 4,
+          ventes: { j7: { ventes: 14, ca: 132, panier: 9.4 }, j7prec: { ventes: 11, ca: 104 }, j30: { ventes: 61, ca: 548, panier: 8.98 }, j30prec: { ventes: 66, ca: 590 }, an: { ventes: 410, ca: 3620, panier: 8.8 }, depuisDebut: { ventes: 410, ca: 3620 }, tauxRetrait: 86, nonRetirees30: 4,
             parCategorie: [{ nom: 'Vêtements', nb: 38 }, { nom: 'Objets', nb: 17 }, { nom: 'Meubles', nb: 6 }], parPoint: [{ nom: 'La Blanche', nb: 33 }, { nom: 'Au passage', nb: 15 }, { nom: 'La repasserie', nb: 9 }, { nom: 'Au trésor de Melusine', nb: 4 }], mois: m12 },
           stock: { enVente: 124, reserves: 9, valeur: 1430, nbAnciens: 18, parCategorie: [{ nom: 'Vêtements', nb: 81 }, { nom: 'Objets', nb: 31 }, { nom: 'Meubles', nb: 12 }],
             anciens: articles.slice(0, 2).map(function (a, i) { return { id: a.id, titre: a.titre, prix: a.prix, jours: 45 - i * 8, photo: a.photos[0] }; }), vitesse: [{ nom: 'Meubles', jours: 4.5 }, { nom: 'Vêtements', jours: 9.2 }, { nom: 'Objets', jours: 13 }] },
