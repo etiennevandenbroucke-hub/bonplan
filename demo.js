@@ -76,12 +76,12 @@
     typesCO2: TYPES, equivalences: { voitureKgParKm: 0.142, empreinteFrancaisKg: 9100, source: 'ADEME, Impact CO2' },
     notificationsPush: false,
     points: [
-      { nom: 'La Blanche', adresse: '2379 route de la Blanche Maison, 59270 Bailleul', horaires: 'Du mardi au samedi, 9h–12h et 14h–18h', jours: ['mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'], vente: true, volumineux: true, location: true },
+      { nom: 'La Recycle\'Rit', adresse: '2379 route de la Blanche, 59270 Bailleul', horaires: 'Lundi, mardi, mercredi et vendredi : 9h-12h30 et 13h30-18h ; jeudi : 10h30-12h30 et 13h30-18h ; samedi : 9h-12h30 et 13h30-17h', telephone: '03 28 00 00 00', jours: ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'], vente: true, volumineux: true, location: true },
       { nom: 'Au trésor de Melusine', adresse: '29 rue d\'Occident, 59270 Bailleul', horaires: '[horaires à compléter]', jours: [], vente: true, volumineux: false, location: false },
-      { nom: 'Au passage', adresse: 'Gare SNCF, 59270 Bailleul', horaires: '[horaires à compléter]', jours: [], vente: true, volumineux: false, location: false },
+      { nom: 'Au passage', adresse: 'Gare SNCF, 59270 Bailleul', horaires: 'Lundi, mardi, mercredi et vendredi : 6h-14h et 15h30-19h ; jeudi : 6h-19h', jours: ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'], vente: true, volumineux: false, location: false },
       { nom: 'La repasserie', adresse: '457 petite verte rue, 59270 Bailleul', horaires: '[horaires à compléter]', jours: [], vente: true, volumineux: false, location: false }
     ],
-    categoriesVolumineuses: ['Meubles'], delaiPreparationJours: 1,
+    categoriesVolumineuses: ['Meubles'], delaiPreparationJours: 1, delaiPreparationHeures: 24,
     profil: { ages: ['Moins de 25 ans', '25 à 39 ans', '40 à 59 ans', '60 ans et plus'], communes: ['Bailleul', 'Méteren', 'Saint-Jans-Cappel', 'Steenwerck', 'Nieppe', 'Autre commune'], connu: ['Bouche-à-oreille', 'En boutique', 'Réseaux sociaux', 'Affiche', 'Autre'] },
     urlConditions: 'https://example.com',
     location: { active: true, categories: ['Bricolage', 'Jardin', 'Nettoyage', 'Déménagement'], dureeMax: 14, horizon: 60,
@@ -153,7 +153,7 @@
         var lim = new Date(Date.now() + 7 * J); lim.setHours(23, 59, 0, 0);
         var cr = '';
         if (r.creneau && r.creneau.date) { var d = new Date(r.creneau.date + 'T12:00'); cr = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][d.getDay()] + ' ' + d.getDate() + (r.creneau.moment ? ', ' + r.creneau.moment : ''); }
-        var resa = { point: r.point || 'La Blanche', code: code(), numero: 'R' + Date.now(), article: a, limite: lim.getTime(), reserveLe: Date.now(), statut: 'active', creneau: cr, prenom: utilisateur.prenom, telephone: utilisateur.telephone, emplacement: 'Étagère B2' };
+        var resa = { point: r.point || 'La Recycle\'Rit', code: code(), numero: 'R' + Date.now(), article: a, limite: lim.getTime(), reserveLe: Date.now(), statut: 'active', creneau: cr, prenom: utilisateur.prenom, telephone: utilisateur.telephone, emplacement: 'Étagère B2' };
         resas.unshift(resa); return ok(resa);
       }
       case 'mesResas': return ok({ achats: { reservations: resas, attentes: attentes }, locations: locations });
@@ -239,9 +239,9 @@
       case 'equipeTableau': {
         var m12 = []; for (var k = 11; k >= 0; k--) { var dm = new Date(); dm.setDate(1); dm.setMonth(dm.getMonth() - k); m12.push({ mois: dm.toISOString().slice(0, 7), ventes: 20 + ((k * 7) % 15), ca: 180 + ((k * 53) % 160) }); }
         return ok({ calculeLe: Date.now(),
-          aujourdhui: { retraitsAujourdhui: [{ nom: 'La Blanche', nb: 3 }, { nom: 'Au passage', nb: 1 }], retraitsDemain: [{ nom: 'La Blanche', nb: 2 }], reservationsEnCours: 9, sansCreneau: 3, finissentAujourdhui: 1, locationsARemettre: 2, locationsARecuperer: 1, retards: 0, messagesNonLus: 2, donsATraiter: 1, messagesSignales: 0 },
+          aujourdhui: { retraitsAujourdhui: [{ nom: 'La Recycle\'Rit', nb: 3 }, { nom: 'Au passage', nb: 1 }], retraitsDemain: [{ nom: 'La Recycle\'Rit', nb: 2 }], reservationsEnCours: 9, sansCreneau: 3, finissentAujourdhui: 1, locationsARemettre: 2, locationsARecuperer: 1, retards: 0, messagesNonLus: 2, donsATraiter: 1, messagesSignales: 0 },
           ventes: { j7: { ventes: 14, ca: 132, panier: 9.4 }, j7prec: { ventes: 11, ca: 104 }, j30: { ventes: 61, ca: 548, panier: 8.98 }, j30prec: { ventes: 66, ca: 590 }, an: { ventes: 410, ca: 3620, panier: 8.8 }, depuisDebut: { ventes: 410, ca: 3620 }, tauxRetrait: 86, nonRetirees30: 4,
-            parCategorie: [{ nom: 'Vêtements', nb: 38 }, { nom: 'Objets', nb: 17 }, { nom: 'Meubles', nb: 6 }], parPoint: [{ nom: 'La Blanche', nb: 33 }, { nom: 'Au passage', nb: 15 }, { nom: 'La repasserie', nb: 9 }, { nom: 'Au trésor de Melusine', nb: 4 }], mois: m12 },
+            parCategorie: [{ nom: 'Vêtements', nb: 38 }, { nom: 'Objets', nb: 17 }, { nom: 'Meubles', nb: 6 }], parPoint: [{ nom: 'La Recycle\'Rit', nb: 33 }, { nom: 'Au passage', nb: 15 }, { nom: 'La repasserie', nb: 9 }, { nom: 'Au trésor de Melusine', nb: 4 }], mois: m12 },
           stock: { enVente: 124, reserves: 9, valeur: 1430, nbAnciens: 18, parCategorie: [{ nom: 'Vêtements', nb: 81 }, { nom: 'Objets', nb: 31 }, { nom: 'Meubles', nb: 12 }],
             anciens: articles.slice(0, 2).map(function (a, i) { return { id: a.id, titre: a.titre, prix: a.prix, jours: 45 - i * 8, photo: a.photos[0] }; }), vitesse: [{ nom: 'Meubles', jours: 4.5 }, { nom: 'Vêtements', jours: 9.2 }, { nom: 'Objets', jours: 13 }] },
           location: { actif: true, outils: 3, enReparation: 1, locations30: 11, ca30: 196, occupation: 37, reservees: 2, top: [{ nom: 'Perceuse-visseuse 18 V', nb: 6 }, { nom: 'Tondeuse thermique', nb: 4 }] },
@@ -252,7 +252,7 @@
             motsAlertes: [{ nom: 'poussette', nb: 9 }, { nom: 'velo', nb: 7 }, { nom: 'canape', nb: 6 }, { nom: 'manteau', nb: 5 }, { nom: 'lego', nb: 4 }], alertesParCategorie: [{ nom: 'Vêtements › Enfant', nb: 21 }, { nom: 'Meubles', nb: 17 }, { nom: 'Toutes', nb: 15 }],
             taillesDemandees: [{ nom: '38', nb: 9 }, { nom: 'M', nb: 8 }, { nom: '4 ans', nb: 6 }], attenteTop: [{ id: 'A3', titre: 'Lampe de chevet années 70', nb: 4 }],
             recherchesTop: [{ nom: 'jean', nb: 41 }, { nom: 'robe', nb: 33 }, { nom: 'commode', nb: 18 }], recherchesSansResultat: [{ nom: 'poussette', nb: 14 }, { nom: 'trottinette', nb: 9 }, { nom: 'lit bebe', nb: 6 }] },
-          aFaire: { retraits: articles.slice(0, 2).map(function (a, i) { return { code: 'BP-K7Q' + i, titre: a.titre, prenom: ['Camille', 'Yacine'][i], creneau: i ? '' : 'aujourd\'hui matin', point: 'La Blanche', limite: Date.now() + J, photo: a.photos[0], emplacement: 'Étagère B2' }; }),
+          aFaire: { retraits: articles.slice(0, 2).map(function (a, i) { return { code: 'BP-K7Q' + i, titre: a.titre, prenom: ['Camille', 'Yacine'][i], creneau: i ? '' : 'aujourd\'hui matin', point: 'La Recycle\'Rit', limite: Date.now() + J, photo: a.photos[0], emplacement: 'Étagère B2' }; }),
             dons: [{ id: 'D1', description: 'Un sac de vêtements enfant 4-6 ans', prenom: 'Sophie', date: Date.now() - 3600e3, mode: 'Je l\'apporte au point de collecte', photos: [articles[0].photos[0]] }],
             messages: [{ id: 'C9', prenom: 'Marc', article: 'Commode', dernier: 'Bonjour, est-elle toujours disponible ?' }], locations: [] },
           impact: { kgMois: 74, co2Mois: 1630, kgTotal: 812, co2Total: 9870, dons: { proposes: 12, acceptes: 7 } } });

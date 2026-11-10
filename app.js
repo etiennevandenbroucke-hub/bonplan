@@ -4,7 +4,7 @@
 
   var API_URL = (window.BSBP_CONFIG && window.BSBP_CONFIG.API_URL || '').trim();
   var MODE_DEMO = !API_URL;
-  var VERSION_APP = '6.4.0';
+  var VERSION_APP = '6.5.0';
   var Cap = window.Capacitor;
   var Plugins = (Cap && Cap.Plugins) || {};
   var NATIF = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
@@ -778,12 +778,32 @@
   }
 
   // ================= Réservation : choix du créneau =================
+  /** 24 h minimum entre la réservation et le retrait : « Matin (9h–12h) » demain n'est possible que si l'on réserve avant 9 h aujourd'hui. */
+  function heureCreneau(m) { var x = /(\d{1,2})\s*h(\d{2})?/.exec(String(m || '')); return x ? Number(x[1]) + (x[2] ? Number(x[2]) / 60 : 0) : null; }
+  function plusTotRetrait() { var h = cfg().delaiPreparationHeures; return Date.now() + (h == null ? 24 : h) * 3600000; }
+  function momentPossible(jour, m) {
+    var d = new Date(jour); d.setHours(0, 0, 0, 0);
+    var h = heureCreneau(m);
+    return (h === null ? d.getTime() + 86399000 : d.getTime() + h * 3600000) >= plusTotRetrait();
+  }
+  function jourPossible(jour) {
+    var mm = cfg().creneaux || [];
+    return mm.length ? mm.some(function (m) { return momentPossible(jour, m); }) : momentPossible(jour, '');
+  }
+  function majMoments(zm, choix) {
+    if (!zm) return;
+    zm.querySelectorAll('.puce').forEach(function (x) {
+      var ok = !!choix.date && momentPossible(new Date(choix.date + 'T12:00'), x.dataset.moment);
+      x.disabled = !ok;
+      if (!ok && choix.moment === x.dataset.moment) { choix.moment = ''; x.setAttribute('aria-pressed', 'false'); }
+    });
+  }
   function joursDisponibles(limiteMs, joursPoint) {
     var c = cfg(), jours = [], d = new Date(); d.setHours(12, 0, 0, 0);
     d.setDate(d.getDate() + (c.delaiPreparationJours == null ? 1 : c.delaiPreparationJours)); // pas de retrait le jour même
     var ouverts = (joursPoint && joursPoint.length) ? joursPoint : (c.joursOuverture || []).length ? c.joursOuverture : JOURS;
     while (d.getTime() <= limiteMs && jours.length < 10) {
-      if (ouverts.indexOf(JOURS[d.getDay()]) >= 0) jours.push(new Date(d));
+      if (ouverts.indexOf(JOURS[d.getDay()]) >= 0 && jourPossible(d)) jours.push(new Date(d));
       d.setDate(d.getDate() + 1);
     }
     return jours;
@@ -808,7 +828,7 @@
       '<h2 class="section">Point de retrait</h2>' +
       (permis.length < (c.points || []).length ? '<p class="meta">Article volumineux : retrait uniquement dans ' + (permis.length > 1 ? 'ces lieux' : 'ce lieu') + '.</p>' : '') +
       '<div class="points-retrait" id="points">' + permis.map(function (x) {
-        return '<button class="point-retrait" data-point="' + esc(x.nom) + '" aria-pressed="' + (x.nom === choix.point) + '"><b>' + esc(x.nom) + '</b><span>' + esc(x.adresse) + '</span>' + (x.horaires ? '<span>' + esc(x.horaires) + '</span>' : '') + '</button>';
+        return '<button class="point-retrait" data-point="' + esc(x.nom) + '" aria-pressed="' + (x.nom === choix.point) + '"><b>' + esc(x.nom) + '</b><span>' + esc(x.adresse) + '</span>' + (x.horaires ? '<span>' + esc(x.horaires) + '</span>' : '') + (x.telephone ? '<span>Tél. ' + esc(x.telephone) + '</span>' : '') + '</button>';
       }).join('') + '</div>' +
       '<h2 class="section">Jour</h2><div class="choix" id="jours">' + jours.map(function (d) {
         var j = joursRestants(d.getTime());
@@ -827,7 +847,7 @@
       var b = e.target.closest('.puce'); if (!b) return;
       choix.date = b.dataset.date;
       zj.querySelectorAll('.puce').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
-      if (zm) zm.querySelectorAll('.puce').forEach(function (x) { x.disabled = !choix.date; if (!choix.date) x.setAttribute('aria-pressed', 'false'); });
+      majMoments(zm, choix);
       if (!choix.date) choix.moment = '';
     };
     if (zm) zm.onclick = function (e) {
@@ -858,7 +878,7 @@
       '<p>Un mail de confirmation vient de vous être envoyé.</p>' +
       '<section class="encadre"><h3>' + (r.creneau ? 'Passage prévu : ' + esc(r.creneau) : 'À retirer avant le ' + esc(dateLongue(r.limite))) + '</h3>' +
         (r.creneau ? '<p>Au plus tard le ' + esc(dateLongue(r.limite)) + '.</p>' : '') +
-        (function () { var pt = (c.points || []).filter(function (x) { return x.nom === r.point; })[0] || c.point || {}; return '<p><b>' + esc(pt.nom) + '</b>, ' + esc(pt.adresse) + '</p>' + (pt.horaires ? '<p>' + esc(pt.horaires) + '</p>' : ''); })() +
+        (function () { var pt = (c.points || []).filter(function (x) { return x.nom === r.point; })[0] || c.point || {}; return '<p><b>' + esc(pt.nom) + '</b>, ' + esc(pt.adresse) + '</p>' + (pt.horaires ? '<p>' + esc(pt.horaires) + '</p>' : '') + (pt.telephone ? '<p>Tél. <a href="tel:' + esc(String(pt.telephone).replace(/\s/g, '')) + '">' + esc(pt.telephone) + '</a></p>' : ''); })() +
         '<p>Montant à régler sur place : ' + prix(r.article.prix) + '</p></section>' +
       (r.article.co2 || r.article.poids ? '<p class="impact-ligne">' + ICONES.feuille + '<span>Merci : <b>' + (r.article.co2 ? co2(r.article.co2) : kg(r.article.poids)) + '</b> évités, à compter dans votre bilan une fois l\'article retiré.</span></p>' : '') +
       '<div class="pile"><button class="bouton" id="voir">Voir mes réservations</button><button class="bouton second" id="cont">Continuer mes achats</button>' +
@@ -927,6 +947,7 @@
           if (etat.utilisateur && etat.utilisateur.role) { etat.modeClient = false; ouvrirOnglet('eq-accueil'); }
           else if (suite) suite(); else if (etat.pile.length) afficher(); else ouvrirOnglet('compte');
           verifierProfil();
+          setTimeout(proposerNotifications, 1500);
         }).catch(function (err) { chargement(btn, false); erreur(err); });
         return;
       }
@@ -1053,7 +1074,9 @@
     var ok = document.getElementById('ok');
     document.getElementById('jours').onclick = function (e) { var b = e.target.closest('.puce'); if (!b) return; choix.date = b.dataset.date; this.querySelectorAll('.puce').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); ok.disabled = false; };
     var zm = document.getElementById('moments');
-    if (zm) zm.onclick = function (e) { var b = e.target.closest('.puce'); if (!b) return; choix.moment = b.dataset.moment; zm.querySelectorAll('.puce').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); };
+    var zj0 = document.getElementById('jours');
+    if (zj0) zj0.addEventListener('click', function () { setTimeout(function () { majMoments(zm, choix); }, 0); });
+    if (zm) zm.onclick = function (e) { var b = e.target.closest('.puce'); if (!b || b.disabled) return; choix.moment = b.dataset.moment; zm.querySelectorAll('.puce').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); };
     ok.onclick = function () {
       chargement(ok, true);
       api('changerCreneau', { code: r.code, creneau: choix }).then(function () { toast('Créneau enregistré. L\'équipe est prévenue.'); retour(); }).catch(function (e) { chargement(ok, false); erreur(e); });
@@ -1803,6 +1826,7 @@
         return '<fieldset class="bloc-specs point-edit" data-i="' + i + '"><legend>' + esc(x.nom || 'Nouveau point') + '</legend>' +
           '<label class="champ">Nom<input name="nom" value="' + esc(x.nom || '') + '"></label><label class="champ">Adresse<input name="adresse" value="' + esc(x.adresse || '') + '"></label>' +
           '<label class="champ">Horaires<input name="horaires" value="' + esc(x.horaires || '') + '"></label>' +
+          '<label class="champ">Téléphone du lieu<input name="telephone" inputmode="tel" value="' + esc(x.telephone || '') + '" placeholder="03 28 …"></label>' +
           '<label class="champ">Jours d\'ouverture <small>(séparés par des virgules, vide = jours par défaut)</small><input name="jours" value="' + esc(x.jours || '') + '" placeholder="mardi, mercredi, jeudi"></label>' +
           [['vente', 'Retrait des achats'], ['volumineux', 'Objets volumineux'], ['location', 'Location de matériel'], ['actif', 'Actif']].map(function (c0) {
             return '<label class="case"><input type="checkbox" name="' + c0[0] + '"' + (x[c0[0]] ? ' checked' : '') + '><span>' + c0[1] + '</span></label>'; }).join('') + '</fieldset>';
@@ -1813,7 +1837,7 @@
         var btn = this;
         var liste = [].slice.call(z.querySelectorAll('.point-edit')).map(function (fs) {
           var i = Number(fs.dataset.i), g = function (n0) { return fs.querySelector('[name="' + n0 + '"]'); };
-          return { ligne: pts[i].ligne, nom: g('nom').value, adresse: g('adresse').value, horaires: g('horaires').value, jours: g('jours').value,
+          return { ligne: pts[i].ligne, nom: g('nom').value, adresse: g('adresse').value, horaires: g('horaires').value, jours: g('jours').value, telephone: g('telephone').value,
                    vente: g('vente').checked, volumineux: g('volumineux').checked, location: g('location').checked, actif: g('actif').checked };
         });
         chargement(btn, true);
@@ -2193,7 +2217,7 @@
         for (var k = 0; k < dec; k++) html += '<span></span>';
         var d = new Date(mois.getTime());
         while (d.getMonth() === mois.getMonth()) {
-          var i = iso(d), passe = d < premier || d > fin, occupe = pris.indexOf(i) >= 0, ferme = ouverts.indexOf(JOURS[d.getDay()]) < 0;
+          var i = iso(d), passe = d < premier || d > fin || !jourPossible(d), occupe = pris.indexOf(i) >= 0, ferme = ouverts.indexOf(JOURS[d.getDay()]) < 0;
           var sel = choix.debut && choix.fin ? (i >= choix.debut && i <= choix.fin) : i === choix.debut;
           var cls = ['jour', passe ? 'passe' : '', occupe ? 'occupe' : '', ferme ? 'ferme' : '', sel ? 'sel' : '', i === choix.debut ? 'bord' : '', i === choix.fin ? 'bord' : ''].filter(Boolean).join(' ');
           html += '<button class="' + cls + '" data-j="' + i + '"' + (passe || occupe ? ' disabled' : '') + ' aria-label="' + esc(dateLongue(d.getTime())) + (occupe ? ', déjà loué' : '') + '">' + d.getDate() + '</button>';
@@ -2230,7 +2254,8 @@
       dessinerCal();
     };
     var zm = document.getElementById('moments');
-    if (zm) zm.onclick = function (e) { var b = e.target.closest('.puce'); if (!b) return; choix.moment = b.dataset.moment; zm.querySelectorAll('.puce').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); };
+    if (zm) zm.onclick = function (e) { var b = e.target.closest('.puce'); if (!b || b.disabled) return; choix.moment = b.dataset.moment; zm.querySelectorAll('.puce').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); };
+    document.getElementById('calendrier').addEventListener('click', function () { setTimeout(function () { majMoments(zm, { date: choix.debut, moment: choix.moment }); if (choix.moment && zm && zm.querySelector('[data-moment="' + choix.moment + '"]:disabled')) choix.moment = ''; }, 0); });
     var zc = document.getElementById('consos');
     if (zc) zc.onchange = function () { choix.consos = [].slice.call(zc.querySelectorAll('input:checked')).map(function (x) { return x.value; }); majResume(); };
     document.getElementById('louer').onclick = function () {
@@ -2463,13 +2488,11 @@
     var dessiner = function (t) {
       var a = t.aujourdhui, v = t.ventes, st = t.stock, lo = t.location, cl = t.clients, d = t.demande, im = t.impact;
       var af = t.aFaire || { retraits: [], dons: [], messages: [], locations: [] };
+      // Alertes rouges : uniquement ce qui ne peut pas attendre
       var urgences = [];
       if (lo.actif && a.retards) urgences.push(['eq-locations', a.retards + ' location' + (a.retards > 1 ? 's' : '') + ' en retard', 'rouge']);
       if (a.finissentAujourdhui) urgences.push(['eq-retraits', a.finissentAujourdhui + ' réservation' + (a.finissentAujourdhui > 1 ? 's expirent' : ' expire') + ' ce soir', 'rouge']);
-      if (a.messagesNonLus) urgences.push(['eq-messages', a.messagesNonLus + ' message' + (a.messagesNonLus > 1 ? 's' : '') + ' sans réponse', 'orange']);
-      if (a.donsATraiter) urgences.push(['dons', a.donsATraiter + ' don' + (a.donsATraiter > 1 ? 's' : '') + ' à traiter', 'orange']);
       if (a.messagesSignales) urgences.push([null, a.messagesSignales + ' message' + (a.messagesSignales > 1 ? 's signalés' : ' signalé') + ' à vérifier', 'rouge']);
-      if (lo.actif && lo.enReparation) urgences.push(['materiel', lo.enReparation + ' outil' + (lo.enReparation > 1 ? 's' : '') + ' en réparation', 'gris']);
       var maxCa = Math.max.apply(null, v.mois.map(function (m) { return m.ca; })) || 1;
       var listeAF = function (items, rendu, max) {
         if (!items.length) return '';
@@ -2479,15 +2502,14 @@
       zone.innerHTML =
         '<div class="tdb-entete"><span>' + esc(dateLongue(Date.now())) + '</span><button class="lien" id="maj-tdb">↻ Actualiser (' + heure(t.calculeLe) + ')</button></div>' +
         // 1. Ce qui demande une action
-        (urgences.length ? '<div class="urgences">' + urgences.map(function (u) { return '<button class="urgence ' + u[2] + '"' + (u[0] ? ' data-aller="' + u[0] + '"' : '') + '>' + esc(u[1]) + '</button>'; }).join('') + '</div>'
-          : '<div class="urgences"><span class="urgence vert">✓ Rien d\'urgent : tout est à jour</span></div>') +
-        // 2. La journée en 4 chiffres
+        (urgences.length ? '<div class="urgences">' + urgences.map(function (u) { return '<button class="urgence ' + u[2] + '"' + (u[0] ? ' data-aller="' + u[0] + '"' : '') + '>' + esc(u[1]) + '</button>'; }).join('') + '</div>' : '') +
+        // 2. Ce qui est à traiter : retraits (vert) et messages (bleu) ressortent ; les dons juste à côté
         '<div class="kpis">' +
-          kpi(nb(ventesAuj), 'Retraits aujourd\'hui', { aller: 'eq-retraits', sous: a.retraitsAujourdhui.map(function (x) { return esc(x.nom) + ' ' + x.nb; }).join(' · ') || 'aucun créneau prévu', ton: ventesAuj ? 'accent' : '' }) +
+          kpi(nb(ventesAuj), 'Retraits aujourd\'hui', { aller: 'eq-retraits', sous: a.retraitsAujourdhui.map(function (x) { return esc(x.nom) + ' ' + x.nb; }).join(' · ') || 'aucun créneau prévu', ton: 'retraits' + (ventesAuj ? '' : ' calme') }) +
+          kpi(nb(a.messagesNonLus), 'Messages à lire', { aller: 'eq-messages', sous: a.messagesNonLus ? 'clients en attente de réponse' : 'tout est lu', ton: 'messages' + (a.messagesNonLus ? '' : ' calme') }) +
           kpi(nb(ventesDem), 'Retraits demain', { aller: 'eq-retraits', sous: a.retraitsDemain.map(function (x) { return esc(x.nom) + ' ' + x.nb; }).join(' · ') || '—' }) +
-          (lo.actif ? kpi(nb(a.locationsARemettre + a.locationsARecuperer), 'Locations du jour', { aller: 'eq-locations', sous: a.locationsARemettre + ' à remettre · ' + a.locationsARecuperer + ' à récupérer' })
-            : kpi(nb(a.reservationsEnCours), 'Réservations en cours', { aller: 'eq-retraits', sous: a.sansCreneau + ' sans jour choisi' })) +
-          kpi(nb(st.enVente), 'Articles en vente', { aller: 'eq-stock', sous: st.reserves + ' réservés' }) +
+          kpi(nb(a.donsATraiter), 'Propositions de dons', { aller: 'dons', sous: a.donsATraiter ? 'à accepter ou refuser' : 'aucune en attente' }) +
+          (lo.actif ? kpi(nb(a.locationsARemettre + a.locationsARecuperer), 'Locations du jour', { aller: 'eq-locations', sous: a.locationsARemettre + ' à remettre · ' + a.locationsARecuperer + ' à récupérer' }) : '') +
         '</div>' +
         // 3. À faire, concrètement
         ((af.retraits.length || af.dons.length || af.messages.length || af.locations.length) ? '<h2 class="section">À faire</h2><div class="afaire-grille">' +
@@ -2516,12 +2538,12 @@
         '<h2 class="section">En détail</h2>' +
         pli('Ventes par catégorie et par point', esc((v.parCategorie[0] || {}).nom || '—') + ' en tête',
           '<h3 class="sous-section">Par catégorie (30 jours)</h3>' + barres(v.parCategorie) + '<h3 class="sous-section">Par point de retrait (30 jours)</h3>' + barres(v.parPoint)) +
-        pli('Stock', nb(st.enVente) + ' en vente · <b class="' + (st.nbAnciens ? 'rouge-txt' : '') + '">' + nb(st.nbAnciens) + ' à relancer</b>',
+        pli('Stock', nb(st.enVente) + ' en vente · ' + nb(st.reserves) + ' réservés · ' + nb(st.nbAnciens) + ' à relancer',
           '<p class="meta">Valeur du stock en ligne : ' + prix(st.valeur) + '</p>' + barres(st.parCategorie) +
           (st.anciens.length ? '<h3 class="sous-section">En ligne depuis plus de 30 jours : baisser le prix ou mettre à la une</h3>' + st.anciens.map(function (x) {
             return '<div class="ligne-article"><div class="vignette">' + imgPhoto(x.photo, '', 200) + '</div><div><h3>' + esc(x.titre) + '</h3><p>' + prix(x.prix) + ' · ' + x.jours + ' jours</p></div></div>'; }).join('') : '') +
           (st.vitesse.length ? '<h3 class="sous-section">Ce qui part le plus vite (jours avant la vente)</h3>' + barres(st.vitesse.map(function (x) { return { nom: x.nom, nb: x.jours }; }), ' j') : '')) +
-        pli('Ce que les gens cherchent', '<b class="' + (d.recherchesSansResultat.length ? 'rouge-txt' : '') + '">' + d.recherchesSansResultat.length + ' recherches sans résultat</b> · ' + nb(d.alertesActives) + ' alertes',
+        pli('Ce que les gens cherchent', d.recherchesSansResultat.length + ' recherches sans résultat · ' + nb(d.alertesActives) + ' alertes',
           '<h3 class="sous-section">Recherches sans résultat : à collecter en priorité</h3>' + puces(d.recherchesSansResultat, 'Aucune pour le moment.') +
           '<h3 class="sous-section">Alertes jamais servies (' + d.nbJamaisServies + ')</h3>' + (d.jamaisServies.length ? '<ul class="liste-simple">' + d.jamaisServies.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<p class="meta">Toutes les alertes ont trouvé au moins un article.</p>') +
           '<h3 class="sous-section">Mots des alertes</h3>' + puces(d.motsAlertes, 'Pas encore d\'alertes.') +
@@ -2531,10 +2553,10 @@
           (d.taillesDemandees.length ? '<h3 class="sous-section">Tailles demandées</h3>' + barres(d.taillesDemandees) : '') +
           '<h3 class="sous-section">Recherches les plus fréquentes</h3>' + puces(d.recherchesTop, 'Pas encore de recherches.') +
           (d.budgetMoyen ? '<p class="meta">Budget maximum moyen indiqué dans les alertes : ' + prix(d.budgetMoyen) + '</p>' : '')) +
-        (lo.actif ? pli('Location', nb(lo.locations30) + ' locations · ' + prix(lo.ca30) + ' en 30 j',
+        (lo.actif ? pli('Location', nb(lo.locations30) + ' locations · ' + prix(lo.ca30) + ' en 30 j' + (lo.enReparation ? ' · ' + lo.enReparation + ' en réparation' : ''),
           '<p class="meta">Taux d\'occupation du matériel : ' + (lo.occupation == null ? '—' : lo.occupation + ' %') + ' · ' + lo.outils + ' outils · ' + lo.enReparation + ' en réparation · ' + lo.reservees + ' à venir</p>' +
           '<h3 class="sous-section">Outils les plus loués</h3>' + barres(lo.top)) : '') +
-        pli('Clients', nb(cl.total) + ' inscrits · <b class="vert-txt">+' + nb(cl.nouveaux30) + '</b> ce mois-ci',
+        pli('Clients', nb(cl.total) + ' inscrits · +' + nb(cl.nouveaux30) + ' ce mois-ci',
           '<p class="meta">' + nb(cl.actifs30) + ' venus sur l\'app en 30 jours · ' + nb(cl.acheteurs) + ' ont déjà acheté</p>' +
           '<h3 class="sous-section">Par commune</h3>' + barres(cl.parCommune) + '<h3 class="sous-section">Par âge</h3>' + barres(cl.parAge) + '<h3 class="sous-section">Comment ils nous ont connus</h3>' + barres(cl.parConnu)) +
         pli('Impact', nb(im.kgMois) + ' kg réemployés ce mois-ci',
@@ -2735,6 +2757,7 @@
       var apres = function (modeChange) {
         if (modeChange) ouvrirOnglet(accueil()); else { majPastille(); var c0 = etat.pile[etat.pile.length - 1]; if (c0 && c0.nom === 'catalogue') vues.catalogue(); }
         verifierProfil();
+        setTimeout(proposerNotifications, 2500);
         if (etat.articles) chargerArticles().then(redessinerSiCatalogue).catch(function () {});
         setTimeout(precharger, 1500);
         ouvrirDepuisLien();
@@ -2746,6 +2769,32 @@
       Promise.all([chargerDonneesPerso(), chargerArticles().catch(function () {})]).then(function () {
         var c = etat.pile[etat.pile.length - 1];
         if (c && (c.nom === 'catalogue' || c.nom === 'reservations')) vues[c.nom]();
+      });
+    });
+  }
+  /**
+   * Pop-up « Recevoir les notifications ? » à la première ouverture (puis au plus une fois par mois si la personne a dit « Plus tard »).
+   * Sur iPhone, sans l'app ajoutée à l'écran d'accueil, on explique d'abord comment l'installer.
+   */
+  function proposerNotifications() {
+    if (!etat.jeton || MODE_DEMO) return;
+    var ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    stockage.get('notif_demande').then(function (v) {
+      if (v && Date.now() - Number(v) < 30 * 86400000) return;
+      if (!NATIF && ios && !estInstallee() && (window.BSBP_CONFIG || {}).firebase) {
+        stockage.set('notif_demande', String(Date.now()));
+        return modale('Recevoir les notifications', 'Pour être prévenu sur votre iPhone (article libéré, réponse de l\'équipe, rappel de retrait), ajoutez d\'abord l\'app à l\'écran d\'accueil : bouton <b>Partager</b> de Safari, puis <b>Sur l\'écran d\'accueil</b>. Ouvrez-la ensuite depuis son icône.', [{ texte: 'Compris', valeur: true }]);
+      }
+      if (!Push.disponible()) return;
+      var fm = NATIF ? Plugins.FirebaseMessaging : WebFM;
+      (fm ? fm.checkPermissions() : Promise.resolve({ receive: 'prompt' })).then(function (perm) {
+        if (perm.receive !== 'prompt' && perm.receive !== 'prompt-with-rationale') { if (perm.receive === 'granted') Push.activer(false); return; }
+        stockage.set('notif_demande', String(Date.now()));
+        modale('Être prévenu sur votre téléphone ?', modeEquipe() ? 'Recevez une notification à chaque nouveau message de client, réservation ou proposition de don.' : 'Un article de vos alertes arrive, un article se libère pour vous, l\'équipe vous répond, votre retrait approche : on vous prévient.', [
+          { texte: 'Activer les notifications', valeur: true }, { texte: 'Plus tard', valeur: false, style: 'second' }
+        ]).then(function (ok) {
+          if (ok) Push.activer(true).then(function (r) { toast(r ? 'Notifications activées.' : 'Vous pourrez les activer dans les réglages du téléphone.', !r); });
+        });
       });
     });
   }

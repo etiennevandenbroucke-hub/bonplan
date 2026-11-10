@@ -683,3 +683,11 @@ details.historique { margin-top: 10px; } details.historique summary { cursor: po
 .bandeau-remise small { display: block; font-size: 12px; font-weight: 700; margin-top: 2px; }
 @media (min-width: 900px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } .afaire-grille { grid-template-columns: 1fr 1fr; } }
 .bandeau:has(.bandeau-remise) .bandeau-texte { padding-right: 116px; }
+
+/* v6.5 : seules les infos à traiter ont de la couleur */
+.kpi.retraits { background: #1F5C45; color: #fff; border-color: #1F5C45; }
+.kpi.messages { background: #2563EB; color: #fff; border-color: #2563EB; }
+.kpi.retraits .kpi-lib, .kpi.retraits .kpi-sous, .kpi.messages .kpi-lib, .kpi.messages .kpi-sous { color: inherit; opacity: .9; }
+.kpi.calme { opacity: .75; }
+.kpis .kpi:nth-child(5) { grid-column: 1 / -1; min-height: 0; }
+@media (min-width: 900px) { .kpis .kpi:nth-child(5) { grid-column: auto; } }

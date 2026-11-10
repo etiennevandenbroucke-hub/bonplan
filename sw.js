@@ -1,5 +1,5 @@
 /* Bailleul Super Bon Plan : cache de l'application + notifications de la version web. */
-var VERSION = 'bonplan-6.4.0';
+var VERSION = 'bonplan-6.5.0';
 var PHOTOS = 'bonplan-photos';
 var FICHIERS = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'demo.js', 'vendor/qrcode.js', 'manifest.webmanifest',
   'fonts/bricolage-grotesque-latin-400-normal.woff2', 'fonts/bricolage-grotesque-latin-600-normal.woff2', 'fonts/bricolage-grotesque-latin-800-normal.woff2',
